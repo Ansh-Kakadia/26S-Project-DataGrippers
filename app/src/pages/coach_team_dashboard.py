@@ -156,7 +156,7 @@ def apply_styles():
 def show():
     apply_styles()
 
-    st.markdown("<h1 style='font-family:monospace; text-align:center;'>Team Dashboard</h1>", unsafe_allow_html=True)
+    st.markdown("<h1 style='font-family:monospace; text-align:center;'>Huskies</h1>", unsafe_allow_html=True)
 
     # ---- Upcoming Games (full width) ----
     st.markdown('<div class="dash-label">Upcoming Games</div>', unsafe_allow_html=True)

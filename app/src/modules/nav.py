@@ -24,6 +24,7 @@ def player_persona_nav():
 
 def coach_persona_nav():
     st.sidebar.page_link("pages/coach_team_dashboard.py", label="My Team", icon="🔎")
+    st.sidebar.page_link("pages/coach_manage_team.py", label="Manage Team", icon="🔎")
     st.sidebar.page_link("pages/coach_form_team.py", label="Make New Team", icon="🔎")
 
 def league_administrator_nav():
@@ -33,8 +34,8 @@ def league_administrator_nav():
 
 def analyst_nav():
     st.sidebar.page_link("pages/analyst_intramural_report.py", label="Intramural Report", icon="🔎")
-    st.sidebar.page_link("pages/league_admin_manage_league.py", label="Venue Report", icon="🔎")
-    st.sidebar.page_link("pages/league_admin_disputes.py", label="Team Report", icon="🔎")
+    st.sidebar.page_link("pages/analyst_venue_report.py", label="Venue Report", icon="🔎")
+    st.sidebar.page_link("pages/analyst_team_report.py", label="Team Report", icon="🔎")
 
 def SideBarLinks(show_home=False, userAuthStatus=None):
 
