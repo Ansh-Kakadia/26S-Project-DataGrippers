@@ -4,7 +4,7 @@ from mysql.connector import Error
 
 analytics = Blueprint("analytics", __name__)
 
-# 4.1 participation trends
+# 1. participation trends
 @analytics.route("/analytics/participation", methods=["GET"])
 def get_participation_trends():
     cursor = get_db().cursor(dictionary=True)
@@ -30,7 +30,7 @@ def get_participation_trends():
     
     
         
-# 4.2 venue utilization
+# 2. venue utilization
 @analytics.route("/analytics/venues", methods=["GET"])
 def get_venue_utilization_trends():
     cursor = get_db().cursor(dictionary=True)
@@ -55,7 +55,7 @@ def get_venue_utilization_trends():
     finally:
         cursor.close()
         
-# 4.3 No show rates by sport or game time
+# 3. No show rates by sport or game time
 @analytics.route("/analytics/forfeits", methods=["GET"])
 def get_no_show_rates():
     cursor = get_db().cursor(dictionary=True)
@@ -76,7 +76,7 @@ def get_no_show_rates():
 					GROUP BY g.game_time"""
         else:
             current_app.logger.error('Error in get_no_show_rates: Invalid filter (must filter by sport or game_time in request args)')
-            return jsonify({"error: invalid filter in get_no_show_rates"}), 400
+            return jsonify({"error": "invalid filter in get_no_show_rates"}), 400
 
         cursor.execute(query)
         results = cursor.fetchall()
@@ -89,22 +89,21 @@ def get_no_show_rates():
     finally:
         cursor.close()
 
-# 4.4 avg pts scored by month
+# 4. avg pts scored by month
 @analytics.route("/analytics/<int:teamId>/pts-scored", methods=["GET"])
 def get_avg_points_scored(teamId):
     cursor = get_db().cursor(dictionary=True)
     try:
         current_app.logger.info(f'GET /analytics/{teamId}/pts-scored')
-        filter = request.args.get("filter")
 
-        query = f"""SELECT YEAR(g.game_date), MONTH(g.game_date), AVG(IF(g.home_team_id = {teamId}, gr.home_score, gr.away_score))
+        query = """SELECT YEAR(g.game_date), MONTH(g.game_date), AVG(IF(g.home_team_id = %s, gr.home_score, gr.away_score))
                 FROM Game_Result gr
                 JOIN Game g ON gr.game_id = g.id
                 JOIN League l ON g.league_id = l.id
-                WHERE g.home_team_id = {teamId} OR g.away_team_id = {teamId}
+                WHERE g.home_team_id = %s OR g.away_team_id = %s
                 GROUP BY YEAR(g.game_date), MONTH(g.game_date)"""
 
-        cursor.execute(query)
+        cursor.execute(query, (teamId, teamId, teamId))
         results = cursor.fetchall()
 
         current_app.logger.info(f'Retrieved {len(results)} data results for avg points scored')
@@ -115,22 +114,21 @@ def get_avg_points_scored(teamId):
     finally:
         cursor.close()
 
-# 4.4 avg pts opponent scored by month
+# 5. avg pts opponent scored by month
 @analytics.route("/analytics/<int:teamId>/pts-allowed", methods=["GET"])
 def get_avg_points_allowed(teamId):
     cursor = get_db().cursor(dictionary=True)
     try:
         current_app.logger.info(f'GET /analytics/{teamId}/pts-allowed')
-        filter = request.args.get("filter")
 
-        query = f"""SELECT YEAR(g.game_date), MONTH(g.game_date), AVG(IF(g.home_team_id = {teamId}, gr.away_score, gr.home_score))
+        query = """SELECT YEAR(g.game_date), MONTH(g.game_date), AVG(IF(g.home_team_id = %s, gr.away_score, gr.home_score))
                 FROM Game_Result gr
                 JOIN Game g ON gr.game_id = g.id
                 JOIN League l ON g.league_id = l.id
-                WHERE g.home_team_id = {teamId} OR g.away_team_id = {teamId}
+                WHERE g.home_team_id = %s OR g.away_team_id = %s
                 GROUP BY YEAR(g.game_date), MONTH(g.game_date)"""
 
-        cursor.execute(query)
+        cursor.execute(query, (teamId, teamId, teamId))
         results = cursor.fetchall()
 
         current_app.logger.info(f'Retrieved {len(results)} data results for avg points scored')
@@ -141,7 +139,7 @@ def get_avg_points_allowed(teamId):
     finally:
         cursor.close()
 
-# 4.5 registration demand
+# 6. registration demand
 @analytics.route("/analytics/demand", methods=["GET"])
 def get_registration_demand():
     cursor = get_db().cursor(dictionary=True)
@@ -164,18 +162,18 @@ def get_registration_demand():
     finally:
         cursor.close()
 
-# 4.6 end-of-season report
+# 7. end-of-season report
 @analytics.route("/analytics/reports/<int:season>", methods=["GET"])
 def get_analytics_report(season):
     cursor = get_db().cursor(dictionary=True)
     try:
         current_app.logger.info(f'GET /analytics/reports/{season}')
 
-        query = f"""SELECT *
+        query = """SELECT *
                     FROM Analytics_Report
-                    WHERE season = {season}"""
+                    WHERE season = %s"""
 
-        cursor.execute(query)
+        cursor.execute(query, (season,))
         results = cursor.fetchall()
 
         current_app.logger.info(f'Retrieved {len(results)} data results for season {season} report')
