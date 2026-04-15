@@ -27,6 +27,8 @@ def get_participation_trends():
         return jsonify({"error": str(e)}), 500
     finally:
         cursor.close()
+    
+    
         
 # 4.2 venue utilization
 @analytics.route("/analytics/venues", methods=["GET"])
