@@ -5,12 +5,12 @@ from mysql.connector import Error
 team_members = Blueprint("team_members", __name__)
 
 
-# 1. Get members of a team
-@team_members.route("/team-members/team/<int:team_id>", methods=["GET"])
+# GET /teams/<id>/members — team roster
+@team_members.route("/teams/<int:team_id>/members", methods=["GET"])
 def get_team_members(team_id):
     cursor = get_db().cursor(dictionary=True)
     try:
-        current_app.logger.info(f"GET /team-members/team/{team_id}")
+        current_app.logger.info(f"GET /teams/{team_id}/members")
 
         query = """SELECT tm.id, tm.date_joined, tm.designation, tm.status,
                           tm.role, tm.join_method,
@@ -18,11 +18,9 @@ def get_team_members(team_id):
                    FROM Team_Membership tm
                    JOIN Player p ON tm.player_id = p.id
                    WHERE tm.team_id = %s"""
-
         cursor.execute(query, (team_id,))
         results = cursor.fetchall()
 
-        current_app.logger.info(f"Retrieved {len(results)} members for team {team_id}")
         return jsonify(results), 200
     except Error as e:
         current_app.logger.error(f"Database error in get_team_members: {e}")
@@ -31,32 +29,28 @@ def get_team_members(team_id):
         cursor.close()
 
 
-# 2. Add team member (invite)
-@team_members.route("/team-members", methods=["POST"])
-def add_team_member():
+# POST /teams/<id>/members — add player to team
+@team_members.route("/teams/<int:team_id>/members", methods=["POST"])
+def add_team_member(team_id):
     cursor = get_db().cursor(dictionary=True)
     try:
-        current_app.logger.info("POST /team-members")
-
+        current_app.logger.info(f"POST /teams/{team_id}/members")
         data = request.get_json()
 
-        required = ["team_id", "player_id"]
-        for field in required:
-            if field not in data:
-                return jsonify({"error": f"Missing required field: {field}"}), 400
+        if "player_id" not in data:
+            return jsonify({"error": "Missing required field: player_id"}), 400
 
         query = """INSERT INTO Team_Membership
-                       (team_id, player_id, role, join_method, status, date_joined)
-                   VALUES (%s, %s, %s, %s, %s, NOW())"""
-        cursor.execute(query, (data["team_id"], data["player_id"],
+                       (team_id, player_id, role, join_method, status, date_joined, designation)
+                   VALUES (%s, %s, %s, %s, %s, NOW(), %s)"""
+        cursor.execute(query, (team_id, data["player_id"],
                                data.get("role", "Player"),
                                data.get("join_method", "Invite"),
-                               data.get("status", "Active")))
+                               data.get("status", "Active"),
+                               data.get("designation", "Starter")))
         get_db().commit()
 
-        current_app.logger.info(f"Added member with id {cursor.lastrowid}")
-        return jsonify({"message": "Member added successfully",
-                        "member_id": cursor.lastrowid}), 201
+        return jsonify({"message": "Member added", "member_id": cursor.lastrowid}), 201
     except Error as e:
         current_app.logger.error(f"Database error in add_team_member: {e}")
         return jsonify({"error": str(e)}), 500
@@ -64,22 +58,22 @@ def add_team_member():
         cursor.close()
 
 
-# 3. Update member (status, role, designation)
-@team_members.route("/team-members/<int:member_id>", methods=["PUT"])
-def update_team_member(member_id):
+# PUT /teams/<id>/members/<member_id> — designate role (starter/sub) or update status
+@team_members.route("/teams/<int:team_id>/members/<int:member_id>", methods=["PUT"])
+def update_team_member(team_id, member_id):
     cursor = get_db().cursor(dictionary=True)
     try:
-        current_app.logger.info(f"PUT /team-members/{member_id}")
-
+        current_app.logger.info(f"PUT /teams/{team_id}/members/{member_id}")
         data = request.get_json()
 
-        cursor.execute("SELECT id FROM Team_Membership WHERE id = %s", (member_id,))
+        cursor.execute("SELECT id FROM Team_Membership WHERE id = %s AND team_id = %s",
+                       (member_id, team_id))
         if not cursor.fetchone():
             return jsonify({"error": "Member not found"}), 404
 
-        allowed_fields = ["status", "role", "designation"]
-        update_fields = [f"{f} = %s" for f in allowed_fields if f in data]
-        params = [data[f] for f in allowed_fields if f in data]
+        allowed = ["status", "role", "designation"]
+        update_fields = [f"{f} = %s" for f in allowed if f in data]
+        params = [data[f] for f in allowed if f in data]
 
         if not update_fields:
             return jsonify({"error": "No valid fields to update"}), 400
@@ -89,8 +83,7 @@ def update_team_member(member_id):
         cursor.execute(query, params)
         get_db().commit()
 
-        current_app.logger.info(f"Updated member {member_id}")
-        return jsonify({"message": "Member updated successfully"}), 200
+        return jsonify({"message": "Member updated"}), 200
     except Error as e:
         current_app.logger.error(f"Database error in update_team_member: {e}")
         return jsonify({"error": str(e)}), 500
@@ -98,22 +91,22 @@ def update_team_member(member_id):
         cursor.close()
 
 
-# 4. Remove member
-@team_members.route("/team-members/<int:member_id>", methods=["DELETE"])
-def remove_team_member(member_id):
+# DELETE /teams/<id>/members/<member_id> — remove player
+@team_members.route("/teams/<int:team_id>/members/<int:member_id>", methods=["DELETE"])
+def remove_team_member(team_id, member_id):
     cursor = get_db().cursor(dictionary=True)
     try:
-        current_app.logger.info(f"DELETE /team-members/{member_id}")
+        current_app.logger.info(f"DELETE /teams/{team_id}/members/{member_id}")
 
-        cursor.execute("SELECT id FROM Team_Membership WHERE id = %s", (member_id,))
+        cursor.execute("SELECT id FROM Team_Membership WHERE id = %s AND team_id = %s",
+                       (member_id, team_id))
         if not cursor.fetchone():
             return jsonify({"error": "Member not found"}), 404
 
         cursor.execute("DELETE FROM Team_Membership WHERE id = %s", (member_id,))
         get_db().commit()
 
-        current_app.logger.info(f"Removed member {member_id}")
-        return jsonify({"message": "Member removed successfully"}), 200
+        return jsonify({"message": "Member removed"}), 200
     except Error as e:
         current_app.logger.error(f"Database error in remove_team_member: {e}")
         return jsonify({"error": str(e)}), 500

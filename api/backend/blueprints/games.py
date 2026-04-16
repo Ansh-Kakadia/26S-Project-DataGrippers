@@ -5,51 +5,39 @@ from mysql.connector import Error
 games = Blueprint("games", __name__)
 
 
-# 1. All games with details
-@games.route("/games", methods=["GET"])
-def get_all_games():
+# POST /games — add a game
+@games.route("/games", methods=["POST"])
+def create_game():
     cursor = get_db().cursor(dictionary=True)
     try:
-        current_app.logger.info("GET /games")
+        current_app.logger.info("POST /games")
+        data = request.get_json()
 
-        status = request.args.get("status")
-        league_id = request.args.get("league_id")
+        required = ["game_time", "game_date", "venue_id", "status",
+                    "venue_time_slot_id", "away_team_id", "home_team_id", "league_id"]
+        for field in required:
+            if field not in data:
+                return jsonify({"error": f"Missing required field: {field}"}), 400
 
-        query = """SELECT g.id AS game_id, g.game_time, g.game_date, g.status,
-                          v.name AS venue_name,
-                          ht.name AS home_team_name,
-                          at.name AS away_team_name,
-                          l.sport, l.league_name
-                   FROM Game g
-                   JOIN Venue v ON g.venue_id = v.id
-                   JOIN Team ht ON g.home_team_id = ht.id
-                   JOIN Team at ON g.away_team_id = at.id
-                   JOIN League l ON g.league_id = l.id
-                   WHERE 1=1"""
-        params = []
+        query = """INSERT INTO Game
+                       (game_time, game_date, venue_id, status, venue_time_slot_id,
+                        away_team_id, home_team_id, league_id)
+                   VALUES (%s, %s, %s, %s, %s, %s, %s, %s)"""
+        cursor.execute(query, (data["game_time"], data["game_date"], data["venue_id"],
+                               data["status"], data["venue_time_slot_id"],
+                               data["away_team_id"], data["home_team_id"],
+                               data["league_id"]))
+        get_db().commit()
 
-        if status:
-            query += " AND g.status = %s"
-            params.append(status)
-        if league_id:
-            query += " AND g.league_id = %s"
-            params.append(league_id)
-
-        query += " ORDER BY g.game_date, g.game_time"
-
-        cursor.execute(query, params)
-        results = cursor.fetchall()
-
-        current_app.logger.info(f"Retrieved {len(results)} games")
-        return jsonify(results), 200
+        return jsonify({"message": "Game created", "game_id": cursor.lastrowid}), 201
     except Error as e:
-        current_app.logger.error(f"Database error in get_all_games: {e}")
+        current_app.logger.error(f"Database error in create_game: {e}")
         return jsonify({"error": str(e)}), 500
     finally:
         cursor.close()
 
 
-# 2. Single game with full details
+# GET /games/<id> — game details
 @games.route("/games/<int:game_id>", methods=["GET"])
 def get_game(game_id):
     cursor = get_db().cursor(dictionary=True)
@@ -67,14 +55,12 @@ def get_game(game_id):
                    JOIN Team at ON g.away_team_id = at.id
                    JOIN League l ON g.league_id = l.id
                    WHERE g.id = %s"""
-
         cursor.execute(query, (game_id,))
         result = cursor.fetchone()
 
         if not result:
             return jsonify({"error": "Game not found"}), 404
 
-        current_app.logger.info(f"Retrieved game {game_id}")
         return jsonify(result), 200
     except Error as e:
         current_app.logger.error(f"Database error in get_game: {e}")
@@ -83,275 +69,270 @@ def get_game(game_id):
         cursor.close()
 
 
-# 3. Result for a specific game
-@games.route("/games/<int:game_id>/result", methods=["GET"])
-def get_game_result(game_id):
+# PUT /games/<id> — update game status (cancel, reschedule, completed)
+@games.route("/games/<int:game_id>", methods=["PUT"])
+def update_game(game_id):
     cursor = get_db().cursor(dictionary=True)
     try:
-        current_app.logger.info(f"GET /games/{game_id}/result")
+        current_app.logger.info(f"PUT /games/{game_id}")
+        data = request.get_json()
 
-        query = """SELECT gr.home_score, gr.away_score, gr.is_forfeit,
+        cursor.execute("SELECT id FROM Game WHERE id = %s", (game_id,))
+        if not cursor.fetchone():
+            return jsonify({"error": "Game not found"}), 404
+
+        allowed = ["game_time", "game_date", "venue_id", "status",
+                   "venue_time_slot_id", "away_team_id", "home_team_id"]
+        update_fields = [f"{f} = %s" for f in allowed if f in data]
+        params = [data[f] for f in allowed if f in data]
+
+        if not update_fields:
+            return jsonify({"error": "No valid fields to update"}), 400
+
+        params.append(game_id)
+        query = f"UPDATE Game SET {', '.join(update_fields)} WHERE id = %s"
+        cursor.execute(query, params)
+        get_db().commit()
+
+        return jsonify({"message": "Game updated"}), 200
+    except Error as e:
+        current_app.logger.error(f"Database error in update_game: {e}")
+        return jsonify({"error": str(e)}), 500
+    finally:
+        cursor.close()
+
+
+# DELETE /games/<id> — delete game
+@games.route("/games/<int:game_id>", methods=["DELETE"])
+def delete_game(game_id):
+    cursor = get_db().cursor(dictionary=True)
+    try:
+        current_app.logger.info(f"DELETE /games/{game_id}")
+
+        cursor.execute("SELECT id FROM Game WHERE id = %s", (game_id,))
+        if not cursor.fetchone():
+            return jsonify({"error": "Game not found"}), 404
+
+        cursor.execute("DELETE FROM Game WHERE id = %s", (game_id,))
+        get_db().commit()
+
+        return jsonify({"message": "Game deleted"}), 200
+    except Error as e:
+        current_app.logger.error(f"Database error in delete_game: {e}")
+        return jsonify({"error": str(e)}), 500
+    finally:
+        cursor.close()
+
+
+# GET /games/<id>/scores — game scores
+@games.route("/games/<int:game_id>/scores", methods=["GET"])
+def get_game_scores(game_id):
+    cursor = get_db().cursor(dictionary=True)
+    try:
+        current_app.logger.info(f"GET /games/{game_id}/scores")
+
+        query = """SELECT gr.id, gr.home_score, gr.away_score, gr.is_forfeit,
                           wt.name AS winning_team_name
                    FROM Game_Result gr
                    JOIN Team wt ON gr.winning_team_id = wt.id
                    WHERE gr.game_id = %s"""
-
         cursor.execute(query, (game_id,))
         result = cursor.fetchone()
 
         if not result:
-            return jsonify({"error": "No result found for this game"}), 404
+            return jsonify({"error": "No scores found for this game"}), 404
 
-        current_app.logger.info(f"Retrieved result for game {game_id}")
+        submissions_query = """SELECT ss.id, ss.home_score, ss.away_score,
+                                      ss.status, ss.submission_date,
+                                      ss.dispute_reason, ss.is_disputed,
+                                      p.first_name, p.last_name
+                               FROM Score_Submission ss
+                               JOIN Player p ON ss.player_id = p.id
+                               WHERE ss.game_id = %s"""
+        cursor.execute(submissions_query, (game_id,))
+        result["submissions"] = cursor.fetchall()
+
         return jsonify(result), 200
     except Error as e:
-        current_app.logger.error(f"Database error in get_game_result: {e}")
+        current_app.logger.error(f"Database error in get_game_scores: {e}")
         return jsonify({"error": str(e)}), 500
     finally:
         cursor.close()
 
 
-# 4. All games for a team
-@games.route("/games/team/<int:team_id>", methods=["GET"])
-def get_games_by_team(team_id):
+# POST /games/<id>/scores — submit game scores
+@games.route("/games/<int:game_id>/scores", methods=["POST"])
+def submit_game_scores(game_id):
     cursor = get_db().cursor(dictionary=True)
     try:
-        current_app.logger.info(f"GET /games/team/{team_id}")
+        current_app.logger.info(f"POST /games/{game_id}/scores")
+        data = request.get_json()
 
-        status = request.args.get("status")
+        required = ["player_id", "home_score", "away_score"]
+        for field in required:
+            if field not in data:
+                return jsonify({"error": f"Missing required field: {field}"}), 400
 
-        query = """SELECT g.id AS game_id, g.game_time, g.game_date, g.status,
-                          v.name AS venue_name,
-                          ht.name AS home_team_name,
-                          at.name AS away_team_name,
-                          l.sport, l.league_name
-                   FROM Game g
-                   JOIN Venue v ON g.venue_id = v.id
-                   JOIN Team ht ON g.home_team_id = ht.id
-                   JOIN Team at ON g.away_team_id = at.id
-                   JOIN League l ON g.league_id = l.id
-                   WHERE (g.home_team_id = %s OR g.away_team_id = %s)"""
-        params = [team_id, team_id]
+        query = """INSERT INTO Score_Submission
+                       (player_id, game_id, home_score, away_score, status,
+                        submission_date, dispute_reason, is_disputed)
+                   VALUES (%s, %s, %s, %s, %s, NOW(), %s, %s)"""
+        cursor.execute(query, (data["player_id"], game_id,
+                               data["home_score"], data["away_score"],
+                               data.get("status", "Pending"),
+                               data.get("dispute_reason", ""),
+                               data.get("is_disputed", False)))
+        get_db().commit()
 
-        if status:
-            query += " AND g.status = %s"
-            params.append(status)
-
-        query += " ORDER BY g.game_date, g.game_time"
-
-        cursor.execute(query, params)
-        results = cursor.fetchall()
-
-        current_app.logger.info(f"Retrieved {len(results)} games for team {team_id}")
-        return jsonify(results), 200
+        return jsonify({"message": "Score submitted",
+                        "submission_id": cursor.lastrowid}), 201
     except Error as e:
-        current_app.logger.error(f"Database error in get_games_by_team: {e}")
+        current_app.logger.error(f"Database error in submit_game_scores: {e}")
         return jsonify({"error": str(e)}), 500
     finally:
         cursor.close()
 
 
-# 5. All games for a player (through team membership)
-@games.route("/games/player/<int:player_id>", methods=["GET"])
-def get_games_by_player(player_id):
+# PUT /games/<id>/scores — update disputed scores
+@games.route("/games/<int:game_id>/scores", methods=["PUT"])
+def update_game_scores(game_id):
     cursor = get_db().cursor(dictionary=True)
     try:
-        current_app.logger.info(f"GET /games/player/{player_id}")
+        current_app.logger.info(f"PUT /games/{game_id}/scores")
+        data = request.get_json()
 
-        query = """SELECT DISTINCT g.id AS game_id, g.game_time, g.game_date, g.status,
-                          v.name AS venue_name,
-                          ht.name AS home_team_name,
-                          at.name AS away_team_name,
-                          l.sport, l.league_name
-                   FROM Game g
-                   JOIN Venue v ON g.venue_id = v.id
-                   JOIN Team ht ON g.home_team_id = ht.id
-                   JOIN Team at ON g.away_team_id = at.id
-                   JOIN League l ON g.league_id = l.id
-                   JOIN Team_Membership tm ON (tm.team_id = g.home_team_id
-                                               OR tm.team_id = g.away_team_id)
-                   WHERE tm.player_id = %s
-                   ORDER BY g.game_date, g.game_time"""
+        cursor.execute("SELECT id FROM Game_Result WHERE game_id = %s", (game_id,))
+        existing = cursor.fetchone()
 
-        cursor.execute(query, (player_id,))
-        results = cursor.fetchall()
+        if existing:
+            allowed = ["winning_team_id", "home_score", "away_score", "is_forfeit"]
+            update_fields = [f"{f} = %s" for f in allowed if f in data]
+            params = [data[f] for f in allowed if f in data]
 
-        current_app.logger.info(f"Retrieved {len(results)} games for player {player_id}")
-        return jsonify(results), 200
+            if not update_fields:
+                return jsonify({"error": "No valid fields to update"}), 400
+
+            params.append(game_id)
+            query = f"UPDATE Game_Result SET {', '.join(update_fields)} WHERE game_id = %s"
+            cursor.execute(query, params)
+            get_db().commit()
+            return jsonify({"message": "Scores updated"}), 200
+        else:
+            required = ["winning_team_id", "home_score", "away_score"]
+            for field in required:
+                if field not in data:
+                    return jsonify({"error": f"Missing required field: {field}"}), 400
+
+            query = """INSERT INTO Game_Result (game_id, winning_team_id, home_score,
+                                                 away_score, is_forfeit)
+                       VALUES (%s, %s, %s, %s, %s)"""
+            cursor.execute(query, (game_id, data["winning_team_id"],
+                                   data["home_score"], data["away_score"],
+                                   data.get("is_forfeit", False)))
+            get_db().commit()
+            return jsonify({"message": "Scores created"}), 201
     except Error as e:
-        current_app.logger.error(f"Database error in get_games_by_player: {e}")
+        current_app.logger.error(f"Database error in update_game_scores: {e}")
         return jsonify({"error": str(e)}), 500
     finally:
         cursor.close()
 
 
-# 6. All games in a league
-@games.route("/games/league/<int:league_id>", methods=["GET"])
-def get_games_by_league(league_id):
+# GET /games/<id>/disputes — disputes for a game
+@games.route("/games/<int:game_id>/disputes", methods=["GET"])
+def get_game_disputes(game_id):
     cursor = get_db().cursor(dictionary=True)
     try:
-        current_app.logger.info(f"GET /games/league/{league_id}")
+        current_app.logger.info(f"GET /games/{game_id}/disputes")
 
-        query = """SELECT g.id AS game_id, g.game_time, g.game_date, g.status,
-                          v.name AS venue_name,
-                          ht.name AS home_team_name,
-                          at.name AS away_team_name,
-                          l.sport, l.league_name
-                   FROM Game g
-                   JOIN Venue v ON g.venue_id = v.id
-                   JOIN Team ht ON g.home_team_id = ht.id
-                   JOIN Team at ON g.away_team_id = at.id
-                   JOIN League l ON g.league_id = l.id
-                   WHERE g.league_id = %s
-                   ORDER BY g.game_date, g.game_time"""
-
-        cursor.execute(query, (league_id,))
-        results = cursor.fetchall()
-
-        current_app.logger.info(f"Retrieved {len(results)} games for league {league_id}")
-        return jsonify(results), 200
-    except Error as e:
-        current_app.logger.error(f"Database error in get_games_by_league: {e}")
-        return jsonify({"error": str(e)}), 500
-    finally:
-        cursor.close()
-
-
-# 7. Player stats for a game
-@games.route("/games/<int:game_id>/stats", methods=["GET"])
-def get_game_stats(game_id):
-    cursor = get_db().cursor(dictionary=True)
-    try:
-        current_app.logger.info(f"GET /games/{game_id}/stats")
-
-        query = """SELECT p.first_name, p.last_name,
-                          pgs.points, pgs.goals_scored, pgs.assists,
-                          pgs.attended, pgs.wins
-                   FROM Player_Game_Stats pgs
-                   JOIN Player p ON pgs.player_id = p.id
-                   WHERE pgs.game_id = %s"""
-
+        query = """SELECT d.id, d.dispute_type, d.status, d.description,
+                          d.resolution, d.resolution_date, d.is_resolved,
+                          d.admin_notes,
+                          st.name AS submitted_by_team_name
+                   FROM Dispute d
+                   JOIN Team st ON d.submitted_by_team_id = st.id
+                   WHERE d.game_id = %s"""
         cursor.execute(query, (game_id,))
         results = cursor.fetchall()
 
-        current_app.logger.info(f"Retrieved {len(results)} player stats for game {game_id}")
         return jsonify(results), 200
     except Error as e:
-        current_app.logger.error(f"Database error in get_game_stats: {e}")
+        current_app.logger.error(f"Database error in get_game_disputes: {e}")
         return jsonify({"error": str(e)}), 500
     finally:
         cursor.close()
 
 
-# 8. League standings (wins/losses per team)
-@games.route("/games/league/<int:league_id>/standings", methods=["GET"])
-def get_league_standings(league_id):
+# POST /games/<id>/disputes — create dispute / reschedule request
+@games.route("/games/<int:game_id>/disputes", methods=["POST"])
+def create_game_dispute(game_id):
     cursor = get_db().cursor(dictionary=True)
     try:
-        current_app.logger.info(f"GET /games/league/{league_id}/standings")
+        current_app.logger.info(f"POST /games/{game_id}/disputes")
+        data = request.get_json()
 
-        query = """SELECT t.id AS team_id, t.name AS team_name,
-                          SUM(CASE WHEN gr.winning_team_id = t.id THEN 1 ELSE 0 END) AS wins,
-                          SUM(CASE WHEN gr.winning_team_id != t.id THEN 1 ELSE 0 END) AS losses
-                   FROM Team t
-                   JOIN Game g ON (g.home_team_id = t.id OR g.away_team_id = t.id)
-                   JOIN Game_Result gr ON gr.game_id = g.id
-                   WHERE g.league_id = %s
-                   GROUP BY t.id, t.name
-                   ORDER BY wins DESC, losses ASC"""
+        required = ["submitted_by_team_id", "dispute_type", "description"]
+        for field in required:
+            if field not in data:
+                return jsonify({"error": f"Missing required field: {field}"}), 400
 
-        cursor.execute(query, (league_id,))
-        results = cursor.fetchall()
+        query = """INSERT INTO Dispute
+                       (admin_notes, game_id, submitted_by_team_id, dispute_type,
+                        status, description, is_resolved)
+                   VALUES (%s, %s, %s, %s, %s, %s, %s)"""
+        cursor.execute(query, (data.get("admin_notes"), game_id,
+                               data["submitted_by_team_id"],
+                               data["dispute_type"],
+                               data.get("status", "Pending"),
+                               data["description"],
+                               False))
+        get_db().commit()
 
-        current_app.logger.info(f"Retrieved standings for {len(results)} teams in league {league_id}")
-        return jsonify(results), 200
+        return jsonify({"message": "Dispute created",
+                        "dispute_id": cursor.lastrowid}), 201
     except Error as e:
-        current_app.logger.error(f"Database error in get_league_standings: {e}")
+        current_app.logger.error(f"Database error in create_game_dispute: {e}")
         return jsonify({"error": str(e)}), 500
     finally:
         cursor.close()
 
 
-# 9. Head-to-head results between two teams
-@games.route("/games/team/<int:team_id>/head-to-head/<int:opponent_id>", methods=["GET"])
-def get_head_to_head(team_id, opponent_id):
+# PUT /games/<id>/disputes/<dispute_id> — resolve dispute
+@games.route("/games/<int:game_id>/disputes/<int:dispute_id>", methods=["PUT"])
+def resolve_game_dispute(game_id, dispute_id):
     cursor = get_db().cursor(dictionary=True)
     try:
-        current_app.logger.info(f"GET /games/team/{team_id}/head-to-head/{opponent_id}")
+        current_app.logger.info(f"PUT /games/{game_id}/disputes/{dispute_id}")
+        data = request.get_json() or {}
 
-        query = """SELECT g.id AS game_id, g.game_date,
-                          gr.home_score, gr.away_score, gr.is_forfeit,
-                          wt.name AS winning_team_name
-                   FROM Game g
-                   JOIN Game_Result gr ON gr.game_id = g.id
-                   JOIN Team wt ON gr.winning_team_id = wt.id
-                   WHERE ((g.home_team_id = %s AND g.away_team_id = %s)
-                       OR (g.home_team_id = %s AND g.away_team_id = %s))
-                   ORDER BY g.game_date DESC"""
+        cursor.execute("SELECT id FROM Dispute WHERE id = %s AND game_id = %s",
+                       (dispute_id, game_id))
+        if not cursor.fetchone():
+            return jsonify({"error": "Dispute not found"}), 404
 
-        cursor.execute(query, (team_id, opponent_id, opponent_id, team_id))
-        game_results = cursor.fetchall()
+        status = data.get("status", "Resolved")
+        resolution = data.get("resolution", "")
+        is_resolved = data.get("is_resolved", True)
+        admin_notes = data.get("admin_notes")
 
-        cursor.execute("SELECT name FROM Team WHERE id = %s", (team_id,))
-        team_row = cursor.fetchone()
-        cursor.execute("SELECT name FROM Team WHERE id = %s", (opponent_id,))
-        opponent_row = cursor.fetchone()
+        if admin_notes is not None:
+            query = """UPDATE Dispute
+                       SET status = %s, resolution = %s, is_resolved = %s,
+                           resolution_date = NOW(), admin_notes = %s
+                       WHERE id = %s"""
+            cursor.execute(query, (status, resolution, is_resolved, admin_notes, dispute_id))
+        else:
+            query = """UPDATE Dispute
+                       SET status = %s, resolution = %s, is_resolved = %s,
+                           resolution_date = NOW()
+                       WHERE id = %s"""
+            cursor.execute(query, (status, resolution, is_resolved, dispute_id))
 
-        team_name = team_row["name"] if team_row else "Unknown"
-        opponent_name = opponent_row["name"] if opponent_row else "Unknown"
+        get_db().commit()
 
-        team_wins = sum(1 for g in game_results if g["winning_team_name"] == team_name)
-        opponent_wins = sum(1 for g in game_results if g["winning_team_name"] == opponent_name)
-
-        response = {
-            "team_name": team_name,
-            "opponent_name": opponent_name,
-            "team_wins": team_wins,
-            "opponent_wins": opponent_wins,
-            "games": game_results
-        }
-
-        current_app.logger.info(f"Retrieved {len(game_results)} head-to-head games")
-        return jsonify(response), 200
+        return jsonify({"message": "Dispute updated"}), 200
     except Error as e:
-        current_app.logger.error(f"Database error in get_head_to_head: {e}")
-        return jsonify({"error": str(e)}), 500
-    finally:
-        cursor.close()
-
-
-# 10. Aggregated player stats across games
-@games.route("/games/player/<int:player_id>/stats", methods=["GET"])
-def get_player_stats(player_id):
-    cursor = get_db().cursor(dictionary=True)
-    try:
-        current_app.logger.info(f"GET /games/player/{player_id}/stats")
-
-        season = request.args.get("season")
-
-        query = """SELECT COUNT(pgs.game_id) AS games_played,
-                          SUM(pgs.points) AS total_points,
-                          SUM(pgs.goals_scored) AS total_goals,
-                          SUM(pgs.assists) AS total_assists,
-                          SUM(pgs.wins) AS total_wins,
-                          SUM(pgs.attended) AS games_attended
-                   FROM Player_Game_Stats pgs
-                   JOIN Game g ON pgs.game_id = g.id
-                   JOIN League l ON g.league_id = l.id
-                   WHERE pgs.player_id = %s"""
-        params = [player_id]
-
-        if season:
-            query += " AND l.season = %s"
-            params.append(season)
-
-        cursor.execute(query, params)
-        result = cursor.fetchone()
-
-        current_app.logger.info(f"Retrieved aggregated stats for player {player_id}")
-        return jsonify(result), 200
-    except Error as e:
-        current_app.logger.error(f"Database error in get_player_stats: {e}")
+        current_app.logger.error(f"Database error in resolve_game_dispute: {e}")
         return jsonify({"error": str(e)}), 500
     finally:
         cursor.close()
