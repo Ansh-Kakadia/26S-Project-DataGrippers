@@ -5,13 +5,15 @@ from mysql.connector import Error
 leagues = Blueprint("leagues", __name__)
 
 
-# 1. All leagues with optional filters
+# GET /leagues — filtered leagues
 @leagues.route("/leagues", methods=["GET"])
 def get_all_leagues():
     cursor = get_db().cursor(dictionary=True)
     try:
         current_app.logger.info("GET /leagues")
 
+        sport = request.args.get("sport")
+        skill_level = request.args.get("skill_level")
         season = request.args.get("season")
         status = request.args.get("status")
         search = request.args.get("search")
@@ -19,6 +21,12 @@ def get_all_leagues():
         query = "SELECT * FROM League WHERE 1=1"
         params = []
 
+        if sport:
+            query += " AND sport = %s"
+            params.append(sport)
+        if skill_level:
+            query += " AND skill_level = %s"
+            params.append(skill_level)
         if season:
             query += " AND season = %s"
             params.append(season)
@@ -41,20 +49,54 @@ def get_all_leagues():
         cursor.close()
 
 
-# 2. Single league
+# POST /leagues — create a new league
+@leagues.route("/leagues", methods=["POST"])
+def create_league():
+    cursor = get_db().cursor(dictionary=True)
+    try:
+        current_app.logger.info("POST /leagues")
+        data = request.get_json()
+
+        required = ["season", "skill_level", "registration_start", "registration_end",
+                    "rules", "status", "schedule_type", "roster_limit",
+                    "division_tier", "sport", "league_name"]
+        for field in required:
+            if field not in data:
+                return jsonify({"error": f"Missing required field: {field}"}), 400
+
+        query = """INSERT INTO League
+                       (season, skill_level, registration_start, registration_end,
+                        rules, status, schedule_type, roster_limit, division_tier,
+                        sport, league_name)
+                   VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)"""
+        cursor.execute(query, (data["season"], data["skill_level"],
+                               data["registration_start"], data["registration_end"],
+                               data["rules"], data["status"], data["schedule_type"],
+                               data["roster_limit"], data["division_tier"],
+                               data["sport"], data["league_name"]))
+        get_db().commit()
+
+        current_app.logger.info(f"Created league with id {cursor.lastrowid}")
+        return jsonify({"message": "League created", "league_id": cursor.lastrowid}), 201
+    except Error as e:
+        current_app.logger.error(f"Database error in create_league: {e}")
+        return jsonify({"error": str(e)}), 500
+    finally:
+        cursor.close()
+
+
+# GET /leagues/<id> — single league (helper for pages)
 @leagues.route("/leagues/<int:league_id>", methods=["GET"])
 def get_league(league_id):
     cursor = get_db().cursor(dictionary=True)
     try:
         current_app.logger.info(f"GET /leagues/{league_id}")
-
         cursor.execute("SELECT * FROM League WHERE id = %s", (league_id,))
         result = cursor.fetchone()
 
         if not result:
             return jsonify({"error": "League not found"}), 404
 
-        current_app.logger.info(f"Retrieved league {league_id}")
         return jsonify(result), 200
     except Error as e:
         current_app.logger.error(f"Database error in get_league: {e}")
@@ -63,24 +105,23 @@ def get_league(league_id):
         cursor.close()
 
 
-# 3. Update league settings
+# PUT /leagues/<id> — update league config
 @leagues.route("/leagues/<int:league_id>", methods=["PUT"])
 def update_league(league_id):
     cursor = get_db().cursor(dictionary=True)
     try:
         current_app.logger.info(f"PUT /leagues/{league_id}")
-
         data = request.get_json()
 
         cursor.execute("SELECT id FROM League WHERE id = %s", (league_id,))
         if not cursor.fetchone():
             return jsonify({"error": "League not found"}), 404
 
-        allowed_fields = ["league_name", "sport", "roster_limit", "skill_level",
-                          "registration_start", "registration_end", "rules",
-                          "status", "schedule_type", "division_tier", "season"]
-        update_fields = [f"{f} = %s" for f in allowed_fields if f in data]
-        params = [data[f] for f in allowed_fields if f in data]
+        allowed = ["league_name", "sport", "roster_limit", "skill_level",
+                   "registration_start", "registration_end", "rules",
+                   "status", "schedule_type", "division_tier", "season"]
+        update_fields = [f"{f} = %s" for f in allowed if f in data]
+        params = [data[f] for f in allowed if f in data]
 
         if not update_fields:
             return jsonify({"error": "No valid fields to update"}), 400
@@ -90,8 +131,7 @@ def update_league(league_id):
         cursor.execute(query, params)
         get_db().commit()
 
-        current_app.logger.info(f"Updated league {league_id}")
-        return jsonify({"message": "League updated successfully"}), 200
+        return jsonify({"message": "League updated"}), 200
     except Error as e:
         current_app.logger.error(f"Database error in update_league: {e}")
         return jsonify({"error": str(e)}), 500
@@ -99,7 +139,105 @@ def update_league(league_id):
         cursor.close()
 
 
-# 4. Teams in a league
+# GET /leagues/<id>/free-agents — list free agent requests for a league
+@leagues.route("/leagues/<int:league_id>/free-agents", methods=["GET"])
+def get_free_agents(league_id):
+    cursor = get_db().cursor(dictionary=True)
+    try:
+        current_app.logger.info(f"GET /leagues/{league_id}/free-agents")
+
+        query = """SELECT far.id, far.status, far.request_date,
+                          p.id AS player_id, p.first_name, p.last_name, p.email
+                   FROM Free_Agent_Request far
+                   JOIN Player p ON far.player_id = p.id
+                   WHERE far.league_id = %s"""
+        cursor.execute(query, (league_id,))
+        results = cursor.fetchall()
+
+        return jsonify(results), 200
+    except Error as e:
+        current_app.logger.error(f"Database error in get_free_agents: {e}")
+        return jsonify({"error": str(e)}), 500
+    finally:
+        cursor.close()
+
+
+# POST /leagues/<id>/free-agents — register as free agent
+@leagues.route("/leagues/<int:league_id>/free-agents", methods=["POST"])
+def create_free_agent_request(league_id):
+    cursor = get_db().cursor(dictionary=True)
+    try:
+        current_app.logger.info(f"POST /leagues/{league_id}/free-agents")
+        data = request.get_json()
+
+        if "player_id" not in data:
+            return jsonify({"error": "Missing required field: player_id"}), 400
+
+        query = """INSERT INTO Free_Agent_Request (status, player_id, league_id, request_date)
+                   VALUES (%s, %s, %s, NOW())"""
+        cursor.execute(query, ("Pending", data["player_id"], league_id))
+        get_db().commit()
+
+        return jsonify({"message": "Free agent request created",
+                        "request_id": cursor.lastrowid}), 201
+    except Error as e:
+        current_app.logger.error(f"Database error in create_free_agent_request: {e}")
+        return jsonify({"error": str(e)}), 500
+    finally:
+        cursor.close()
+
+
+# PUT /leagues/<id>/free-agents/<req_id> — accept free agent request
+@leagues.route("/leagues/<int:league_id>/free-agents/<int:req_id>", methods=["PUT"])
+def update_free_agent_request(league_id, req_id):
+    cursor = get_db().cursor(dictionary=True)
+    try:
+        current_app.logger.info(f"PUT /leagues/{league_id}/free-agents/{req_id}")
+        data = request.get_json() or {}
+        new_status = data.get("status", "Accepted")
+
+        cursor.execute("SELECT id FROM Free_Agent_Request WHERE id = %s AND league_id = %s",
+                       (req_id, league_id))
+        if not cursor.fetchone():
+            return jsonify({"error": "Request not found"}), 404
+
+        cursor.execute("UPDATE Free_Agent_Request SET status = %s WHERE id = %s",
+                       (new_status, req_id))
+        get_db().commit()
+
+        return jsonify({"message": f"Request {new_status.lower()}"}), 200
+    except Error as e:
+        current_app.logger.error(f"Database error in update_free_agent_request: {e}")
+        return jsonify({"error": str(e)}), 500
+    finally:
+        cursor.close()
+
+
+# DELETE /leagues/<id>/free-agents/<req_id> — reject/revoke request
+@leagues.route("/leagues/<int:league_id>/free-agents/<int:req_id>", methods=["DELETE"])
+def reject_free_agent_request(league_id, req_id):
+    cursor = get_db().cursor(dictionary=True)
+    try:
+        current_app.logger.info(f"DELETE /leagues/{league_id}/free-agents/{req_id}")
+
+        cursor.execute("SELECT id FROM Free_Agent_Request WHERE id = %s AND league_id = %s",
+                       (req_id, league_id))
+        if not cursor.fetchone():
+            return jsonify({"error": "Request not found"}), 404
+
+        cursor.execute("UPDATE Free_Agent_Request SET status = 'Rejected' WHERE id = %s",
+                       (req_id,))
+        get_db().commit()
+
+        return jsonify({"message": "Request rejected"}), 200
+    except Error as e:
+        current_app.logger.error(f"Database error in reject_free_agent_request: {e}")
+        return jsonify({"error": str(e)}), 500
+    finally:
+        cursor.close()
+
+
+# GET /leagues/<id>/teams — helper for league admin page
 @leagues.route("/leagues/<int:league_id>/teams", methods=["GET"])
 def get_league_teams(league_id):
     cursor = get_db().cursor(dictionary=True)
@@ -112,11 +250,9 @@ def get_league_teams(league_id):
                    FROM Team t
                    JOIN Player p ON t.captain_id = p.id
                    WHERE t.league_id = %s"""
-
         cursor.execute(query, (league_id,))
         results = cursor.fetchall()
 
-        current_app.logger.info(f"Retrieved {len(results)} teams for league {league_id}")
         return jsonify(results), 200
     except Error as e:
         current_app.logger.error(f"Database error in get_league_teams: {e}")
@@ -125,7 +261,7 @@ def get_league_teams(league_id):
         cursor.close()
 
 
-# 5. Disputes in a league
+# GET /leagues/<id>/disputes — helper for league admin disputes page
 @leagues.route("/leagues/<int:league_id>/disputes", methods=["GET"])
 def get_league_disputes(league_id):
     cursor = get_db().cursor(dictionary=True)
@@ -133,7 +269,7 @@ def get_league_disputes(league_id):
         current_app.logger.info(f"GET /leagues/{league_id}/disputes")
 
         query = """SELECT d.id, d.dispute_type, d.status, d.description,
-                          d.resolution, d.is_resolved,
+                          d.resolution, d.is_resolved, d.game_id,
                           ht.name AS home_team_name,
                           awt.name AS away_team_name,
                           st.name AS submitted_by_team_name,
@@ -145,47 +281,12 @@ def get_league_disputes(league_id):
                    JOIN Team st ON d.submitted_by_team_id = st.id
                    LEFT JOIN Game_Result gr ON g.id = gr.game_id
                    WHERE g.league_id = %s"""
-
         cursor.execute(query, (league_id,))
         results = cursor.fetchall()
 
-        current_app.logger.info(f"Retrieved {len(results)} disputes for league {league_id}")
         return jsonify(results), 200
     except Error as e:
         current_app.logger.error(f"Database error in get_league_disputes: {e}")
-        return jsonify({"error": str(e)}), 500
-    finally:
-        cursor.close()
-
-
-# 6. Resolve a dispute (accept/reject)
-@leagues.route("/leagues/disputes/<int:dispute_id>", methods=["PUT"])
-def resolve_dispute(dispute_id):
-    cursor = get_db().cursor(dictionary=True)
-    try:
-        current_app.logger.info(f"PUT /leagues/disputes/{dispute_id}")
-
-        data = request.get_json()
-
-        cursor.execute("SELECT id FROM Dispute WHERE id = %s", (dispute_id,))
-        if not cursor.fetchone():
-            return jsonify({"error": "Dispute not found"}), 404
-
-        status = data.get("status", "Resolved")
-        resolution = data.get("resolution", "")
-        is_resolved = data.get("is_resolved", True)
-
-        query = """UPDATE Dispute
-                   SET status = %s, resolution = %s, is_resolved = %s,
-                       resolution_date = NOW()
-                   WHERE id = %s"""
-        cursor.execute(query, (status, resolution, is_resolved, dispute_id))
-        get_db().commit()
-
-        current_app.logger.info(f"Resolved dispute {dispute_id}")
-        return jsonify({"message": "Dispute updated successfully"}), 200
-    except Error as e:
-        current_app.logger.error(f"Database error in resolve_dispute: {e}")
         return jsonify({"error": str(e)}), 500
     finally:
         cursor.close()

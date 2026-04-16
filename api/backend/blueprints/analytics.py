@@ -162,24 +162,29 @@ def get_registration_demand():
     finally:
         cursor.close()
 
-# 7. end-of-season report
-@analytics.route("/analytics/reports/<int:season>", methods=["GET"])
-def get_analytics_report(season):
+# 7. end-of-season reports
+@analytics.route("/analytics/reports", methods=["GET"])
+def get_analytics_report():
     cursor = get_db().cursor(dictionary=True)
     try:
-        current_app.logger.info(f'GET /analytics/reports/{season}')
+        current_app.logger.info('GET /analytics/reports')
 
-        query = """SELECT *
-                    FROM Analytics_Report
-                    WHERE season = %s"""
+        season = request.args.get("season")
 
-        cursor.execute(query, (season,))
+        query = "SELECT * FROM Analytics_Report WHERE 1=1"
+        params = []
+
+        if season:
+            query += " AND season = %s"
+            params.append(season)
+
+        cursor.execute(query, params)
         results = cursor.fetchall()
 
-        current_app.logger.info(f'Retrieved {len(results)} data results for season {season} report')
+        current_app.logger.info(f'Retrieved {len(results)} data results for reports')
         return jsonify(results), 200
     except Error as e:
-        current_app.logger.error(f'Database error in get_analytics_report({season}): {e}')
+        current_app.logger.error(f'Database error in get_analytics_report: {e}')
         return jsonify({"error": str(e)}), 500
     finally:
         cursor.close()
