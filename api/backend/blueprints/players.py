@@ -5,6 +5,43 @@ from mysql.connector import Error
 players = Blueprint("players", __name__)
 
 
+@players.route("/players", methods=['POST'])
+def create_player():
+    cursor = get_db().cursor(dictionary=True)
+    try:
+        current_app.logger.info("POST /players")
+        body = request.get_json() or {}
+
+        first_name = body.get("first_name")
+        last_name = body.get("last_name")
+        email = body.get("email")
+        phone = body.get("phone")
+        university = body.get("university")
+        notification_pref = body.get("notification_pref", "Unsubscribed")
+        graduation_year = body.get("graduation_year")
+
+        if not (first_name and last_name and email):
+            return jsonify({"error": "first_name, last_name, and email are required"}), 400
+
+        if notification_pref not in ("Subscribed", "Unsubscribed"):
+            return jsonify({"error": "notification_pref must be 'Subscribed' or 'Unsubscribed'"}), 400
+
+        query = """INSERT INTO Player
+                       (first_name, last_name, email, phone, university,
+                        notification_pref, graduation_year)
+                   VALUES (%s, %s, %s, %s, %s, %s, %s)"""
+        cursor.execute(query, (first_name, last_name, email, phone,
+                               university, notification_pref, graduation_year))
+        get_db().commit()
+
+        return jsonify({"message": "Player created", "player_id": cursor.lastrowid}), 201
+    except Error as e:
+        current_app.logger.error(f"Database error in create_player: {e}")
+        return jsonify({"error": str(e)}), 500
+    finally:
+        cursor.close()
+
+
 # GET /players/<id> — player details
 @players.route("/players/<int:player_id>", methods=["GET"])
 def get_player(player_id):
