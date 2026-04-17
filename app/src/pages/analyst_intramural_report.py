@@ -1,7 +1,75 @@
 import streamlit as st
 import plotly.graph_objects as go
 from modules.nav import SideBarLinks
+from collections import defaultdict
+import requests
 SideBarLinks(show_home=False, userAuthStatus="analyst_persona")
+
+API_URL = "http://web-api:4000/analytics"
+
+# Fetching data
+def fetch_participation():
+    return requests.get(f"{API_URL}/participation").json()
+
+def fetch_forfeits():
+    return requests.get(f"{API_URL}/forfeits?filter=sport").json()
+
+def fetch_reports(season):
+    return requests.get(f"{API_URL}/reports/{season}").json()
+
+
+# Format participation data
+# Formats fetch_participation data into {szn: {sport: {count, yoy}}}
+def format_data_from_api():
+    participation = fetch_participation()
+    forfeits = fetch_forfeits()
+
+    reports = defaultdict(lambda: {
+        "participation": {},
+        "no_show_rate": {},
+        "budget": {},
+        "budget_change_pct": 0
+    })
+
+    sports_data = defaultdict(list)
+    
+    for row in participation:
+        sports_data[row["sport"]].append(row)
+
+    for sport, entries in sports_data.items():
+        entries.sort(key=lambda x: x["season"])
+
+        for i, row in enumerate(entries):
+            season = row["season"]
+            count = row["total_players"]
+            if i == 0:
+                yoy = 0
+            else:
+                prev_count = entries[i - 1]["total_players"]
+                yoy = round(((count - prev_count) / prev_count) * 100, 1)
+
+            reports[season]["participation"][sport] = {
+                "count": count,
+                "yoy": yoy
+            }
+
+    for row in forfeits:
+        sport = row["sport"]
+        rate = round(float(row["forfeit_rate"]) * 100, 1)
+
+        for season in reports:
+            reports[season]["no_show_rate"][sport] = rate
+
+    # ----------------------------------------------------
+    # PLACEHOLDER BUDGET DATA, NO BUDGET TABLE IN MYSQL DB
+    # ----------------------------------------------------
+    for season in reports:
+        for sport in reports[season]["participation"]:
+            reports[season]["budget"][sport] = 5000
+
+    return reports
+
+
 
 # -------------------------------------------------------
 # Mock Data — 3 semesters
@@ -205,10 +273,11 @@ def show():
         unsafe_allow_html=True,
     )
     col_label, col_select, _ = st.columns([0.01, 2, 3])
+    reports = format_data_from_api()
 
     with col_select:
         selected = st.selectbox(
-            "report_select", list(REPORTS.keys()), label_visibility="collapsed"
+            "report_select", list(reports.keys()), label_visibility="collapsed"
         )
     st.markdown("<br>", unsafe_allow_html=True)
     st.markdown(
@@ -216,12 +285,12 @@ def show():
         unsafe_allow_html=True,
     )
 
-    data = REPORTS[selected]
+    data = reports[selected]
     sports = list(data["participation"].keys())
     counts = [data["participation"][s]["count"] for s in sports]
     yoys = [data["participation"][s]["yoy"] for s in sports]
-    no_show_rates = [data["no_show_rate"][s] for s in sports]
-    budgets = [data["budget"][s] for s in sports]
+    no_show_rates = [data["no_show_rate"].get(s, 0) for s in sports]
+    budgets = [data["budget"].get(s, 0) for s in sports]
     total_budget = sum(budgets)
     budget_chg = data["budget_change_pct"]
 

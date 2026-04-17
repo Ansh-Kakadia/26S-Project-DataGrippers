@@ -1,7 +1,50 @@
 import streamlit as st
 import plotly.graph_objects as go
+import requests
 from modules.nav import SideBarLinks
 SideBarLinks(show_home=False, userAuthStatus="analyst_persona")
+
+API_URL = "http://web-api:4000/"
+
+def normalize_monthly(raw, value_key):
+    if not raw:
+        return [], []
+ 
+    raw = sorted(raw, key=lambda r: (
+        r.get("YEAR(g.game_date)", 0),
+        r.get("MONTH(g.game_date)", 0),
+    ))
+ 
+    months, values = [], []
+    for r in raw:
+        year  = r.get("YEAR(g.game_date)")
+        month = r.get("MONTH(g.game_date)")
+        val   = r.get(value_key)
+        if year is None or month is None:
+            continue
+        months.append(f"{year}-{int(month):02d}")
+        values.append(round(float(val or 0), 1))
+ 
+    return months, values
+
+def compute_record(games, team_id):
+    wins, losses, forfeits = 0, 0, 0
+    for g in games:
+        if team_id not in (g.get("home_team_id"), g.get("away_team_id")):
+            continue
+ 
+        winner_id = g.get("winning_team_id")
+        if winner_id is None:
+            continue  # game not completed
+ 
+        if winner_id == team_id:
+            wins += 1
+        else:
+            losses += 1
+            if g.get("is_forfeit"):
+                forfeits += 1
+ 
+    return wins, losses, forfeits
 
 # -------------------------------------------------------
 # Mock Data
@@ -234,21 +277,50 @@ def show():
 
     c1, c2, _ = st.columns([2, 2, 4])
     with c1:
-        league = st.selectbox("league", list(TEAM_DATA.keys()), label_visibility="collapsed")
+        leagues_res = requests.get(f"{API_URL}/leagues")
+        leagues = leagues_res.json() if leagues_res.ok else []
+        league_map = {l["league_name"]: l["id"]
+                      for l in leagues if l.get("league_name") and l.get("id")}
+        league_name = st.selectbox("league", list(league_map.keys()), label_visibility="collapsed")
+        league_id = league_map[league_name]
     with c2:
-        team = st.selectbox("team", list(TEAM_DATA[league].keys()), label_visibility="collapsed")
+        teams_res = requests.get(f"{API_URL}/leagues/{league_id}/teams")
+        teams = teams_res.json() if teams_res.ok else []
+        team_map = {t["name"]: t["id"]
+                    for t in teams if t.get("name") and t.get("id")}
+        team_name = st.selectbox("team", list(team_map.keys()), label_visibility="collapsed")
+        team_id = team_map[team_name]
 
     st.markdown("<hr style='margin:8px 0 16px 0;'>", unsafe_allow_html=True)
 
-    d = TEAM_DATA[league][team]
-    record = d["record"]
-    win_pct = round(record["W"] / (record["W"] + record["L"]) * 100)
+    games_res = requests.get(
+        f"{API_URL}/leagues/{league_id}/games",
+        params={"team_id": team_id},
+    )
+    games = games_res.json() if games_res.ok else []
+    wins, losses, forfeits = compute_record(games, team_id)
+    win_pct = round((wins / (wins + losses)) * 100) if (wins + losses) else 0
+ 
+    # roster size
+    members_res = requests.get(f"{API_URL}/teams/{team_id}/members")
+    members = members_res.json() if members_res.ok else []
+    roster_size = len([m for m in members if m.get("status") == "Active"])
+ 
+    # monthly scored/allowed
+    scored_res  = requests.get(f"{API_URL}/analytics/{team_id}/pts-scored")
+    allowed_res = requests.get(f"{API_URL}/analytics/{team_id}/pts-allowed")
+    scored_raw  = scored_res.json()  if scored_res.ok  else []
+    allowed_raw = allowed_res.json() if allowed_res.ok else []
+ 
+    months, scored  = normalize_monthly(scored_raw,  "pts_scored")
+    _, allowed = normalize_monthly(allowed_raw, "pts_allowed")
+    point_diff = [s - a for s, a in zip(scored, allowed)]
 
     # ---- KPI Cards ----
     st.html(f"""
     <div class="kpi-row">
         <div class="kpi-box">
-            <div class="kpi-value">{record['W']} - {record['L']}</div>
+            <div class="kpi-value">{wins} - {losses}</div>
             <div class="kpi-label">Win / Loss Record</div>
         </div>
         <div class="kpi-box">
@@ -256,28 +328,32 @@ def show():
             <div class="kpi-label">Win Rate</div>
         </div>
         <div class="kpi-box">
-            <div class="kpi-value">{record['Forfeits']}</div>
+            <div class="kpi-value">{forfeits}</div>
             <div class="kpi-label">Total Forfeits</div>
         </div>
         <div class="kpi-box">
-            <div class="kpi-value">{d['roster_size']}</div>
+            <div class="kpi-value">{roster_size}</div>
             <div class="kpi-label">Roster Size</div>
-        </div>
-        <div class="kpi-box">
-            <div class="kpi-value">{d['avg_attendance_pct']}%</div>
-            <div class="kpi-label">Avg Game Attendance</div>
-        </div>
-    </div>
-    """)
+        </div>""")
+    #     <div class="kpi-box">
+    #         <div class="kpi-value">{d['avg_attendance_pct']}%</div>
+    #         <div class="kpi-label">Avg Game Attendance</div>
+    #     </div>
+    # </div>
+    # """)
 
     # ---- Row 1: Record + Scoring ----
     col1, col2 = st.columns([1, 2])
     with col1:
-        st.plotly_chart(record_chart(record), use_container_width=True)
+        st.plotly_chart(record_chart({
+            "W": wins,
+            "L": losses,
+            "Forfeits": forfeits
+        }), use_container_width=True)
     with col2:
-        st.plotly_chart(scoring_chart(MONTHS, d["avg_points_scored"], d["avg_points_allowed"]), use_container_width=True)
+        st.plotly_chart(scoring_chart(months, scored, allowed), use_container_width=True)
 
     # ---- Row 2: Differential (full width) ----
-    st.plotly_chart(differential_chart(MONTHS, d["point_differential"]), use_container_width=True)
+    st.plotly_chart(differential_chart(months, point_diff), use_container_width=True)
 
 show()

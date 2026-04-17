@@ -84,6 +84,47 @@ def create_league():
     finally:
         cursor.close()
 
+# GET /leagues/<league_id>/games - get games in a league
+@leagues.route("/leagues/<int:league_id>/games", methods=["GET"])
+def get_league_games(league_id):
+    cursor = get_db().cursor(dictionary=True)
+    try:
+        current_app.logger.info(f"GET /leagues/{league_id}/games")
+ 
+        # Optional filters
+        team_id = request.args.get("team_id", type=int)
+        status  = request.args.get("status")
+ 
+        query = """SELECT g.id AS game_id, g.game_date, g.status,
+                        g.home_team_id, g.away_team_id,
+                        gr.home_score, gr.away_score,
+                        gr.is_forfeit, gr.winning_team_id
+                FROM Game g
+                LEFT JOIN Game_Result gr ON g.id = gr.game_id
+                WHERE g.league_id = %s"""
+        params = [league_id]
+ 
+        if team_id is not None:
+            query += " AND (g.home_team_id = %s OR g.away_team_id = %s)"
+            params.extend([team_id, team_id])
+ 
+        if status:
+            query += " AND g.status = %s"
+            params.append(status)
+ 
+        query += " ORDER BY g.game_date, g.game_time"
+ 
+        cursor.execute(query, params)
+        results = cursor.fetchall()
+ 
+        current_app.logger.info(f"Retrieved {len(results)} games for league {league_id}")
+        return jsonify(results), 200
+    except Error as e:
+        current_app.logger.error(f"Database error in get_league_games: {e}")
+        return jsonify({"error": str(e)}), 500
+    finally:
+        cursor.close()
+
 
 # GET /leagues/<id> — single league (helper for pages)
 @leagues.route("/leagues/<int:league_id>", methods=["GET"])

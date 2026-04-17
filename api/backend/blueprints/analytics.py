@@ -96,7 +96,7 @@ def get_avg_points_scored(teamId):
     try:
         current_app.logger.info(f'GET /analytics/{teamId}/pts-scored')
 
-        query = """SELECT YEAR(g.game_date), MONTH(g.game_date), AVG(IF(g.home_team_id = %s, gr.home_score, gr.away_score))
+        query = """SELECT YEAR(g.game_date), MONTH(g.game_date), AVG(IF(g.home_team_id = %s, gr.home_score, gr.away_score)) AS pts_scored
                 FROM Game_Result gr
                 JOIN Game g ON gr.game_id = g.id
                 JOIN League l ON g.league_id = l.id
@@ -121,7 +121,7 @@ def get_avg_points_allowed(teamId):
     try:
         current_app.logger.info(f'GET /analytics/{teamId}/pts-allowed')
 
-        query = """SELECT YEAR(g.game_date), MONTH(g.game_date), AVG(IF(g.home_team_id = %s, gr.away_score, gr.home_score))
+        query = """SELECT YEAR(g.game_date), MONTH(g.game_date), AVG(IF(g.home_team_id = %s, gr.away_score, gr.home_score)) AS pts_allowed
                 FROM Game_Result gr
                 JOIN Game g ON gr.game_id = g.id
                 JOIN League l ON g.league_id = l.id
