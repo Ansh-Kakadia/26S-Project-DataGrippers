@@ -96,33 +96,22 @@ def fmt_hour(h):
         return f"{h-12}:00pm"
     return f"{h}:00am"
 
-
-def parse_slot_date(raw):
+def parse_slot_datetime(raw):
     if not raw:
         return None
-    s = str(raw).split(" ")[0]
     try:
-        return datetime.strptime(s, "%Y-%m-%d").date()
-    except ValueError:
-        pass
-    try:
-        return datetime.strptime(s[:25], "%a, %d %b %Y %H:%M:%S").date()
+        return datetime.strptime(str(raw), "%a, %d %b %Y %H:%M:%S GMT")
     except ValueError:
         return None
+
+def parse_slot_date(raw):
+    dt = parse_slot_datetime(raw)
+    return dt.date() if dt else None
 
 
 def parse_slot_hour(raw):
-    if not raw:
-        return None
-    s = str(raw)
-    # "HH:MM:SS" or "0:16:00:00"-ish from timedelta — grab first HH group
-    parts = s.split(":")
-    try:
-        if len(parts) >= 2:
-            return int(parts[-3]) if len(parts) == 4 else int(parts[0])
-    except ValueError:
-        return None
-    return None
+    dt = parse_slot_datetime(raw)
+    return dt.hour if dt else None
 
 
 def show():
@@ -159,10 +148,10 @@ def show():
     slots = fetch_timeslots(venue_id)
     lookup = {}
     for s in slots:
-        d = parse_slot_date(s.get("slot_date"))
-        h = parse_slot_hour(s.get("slot_start_time"))
-        if d is None or h is None:
+        dt = parse_slot_datetime(s.get("slot_start_time"))
+        if dt is None:
             continue
+        d, h = dt.date(), dt.hour
         label = s.get("league_name") or s.get("sport") or f"Slot {s.get('id','')}"
         lookup.setdefault(d, {}).setdefault(h, []).append({
             "label": label,
