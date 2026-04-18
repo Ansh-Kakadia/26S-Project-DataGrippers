@@ -46,60 +46,49 @@ apply_bold_button_styles()
 if st.button("Act as Maya, a Soccer and Volleyball Player",
              type='primary',
              use_container_width=True):
-    
-    # when user clicks the button, they are now considered authenticated
+
     st.session_state['authenticated'] = True
-
-    # we set the role of the current user
     st.session_state['role'] = 'player_persona'
-
-    # we add the first name of the user (so it can be displayed on
-    # subsequent pages).
     st.session_state['first_name'] = 'Maya'
+    st.session_state['player_id'] = 1
 
-    # finally, we ask streamlit to switch to another page, in this case, the
-    # landing page for this particular user type
     logger.info("Logging in as Player Persona")
     st.switch_page('pages/player_browse_profile.py')
 
 if st.button("Act as Allan, the Team Captain",
              type="primary",
              use_container_width=True):
-    
+
     st.session_state['authenticated'] = True
-
     st.session_state['role'] = 'coach_persona'
-
     st.session_state['first_name'] = 'Allan'
+    st.session_state['player_id'] = 2
+    st.session_state['team_id'] = 1
 
     logger.info("Logging in as Coach Persona")
-
-    st.switch_page('pages/coach_form_team.py')
+    st.switch_page('pages/coach_team_dashboard.py')
 
 if st.button("Act as Derrick, the League Administrator",
              type="primary",
              use_container_width=True):
-    
+
     st.session_state['authenticated'] = True
-
-    st.session_state['role'] = 'league_administrator_persona'
-
+    st.session_state['role'] = 'league_admin_persona'
     st.session_state['first_name'] = 'Derrick'
+    st.session_state['admin_id'] = 1
+    st.session_state['league_id'] = 1
 
     logger.info("Logging in as League Administrator Persona")
-
     st.switch_page('pages/league_admin_venue_schedule.py')
 
 if st.button("Act as Dr. Priya, the Sports Analyst",
              type="primary",
              use_container_width=True):
-    
+
     st.session_state['authenticated'] = True
-
-    st.session_state['role'] = 'sports_analyst_persona'
-
+    st.session_state['role'] = 'analyst_persona'
     st.session_state['first_name'] = 'Dr. Priya'
+    st.session_state['analyst_id'] = 1
 
     logger.info("Logging in as Sports Analyst Persona")
-
     st.switch_page('pages/analyst_intramural_report.py')

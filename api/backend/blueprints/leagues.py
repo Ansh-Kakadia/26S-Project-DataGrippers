@@ -261,6 +261,40 @@ def get_league_teams(league_id):
         cursor.close()
 
 
+# GET /leagues/<id>/standings — W/L per team computed from Game_Result
+@leagues.route("/leagues/<int:league_id>/standings", methods=["GET"])
+def get_league_standings(league_id):
+    cursor = get_db().cursor(dictionary=True)
+    try:
+        current_app.logger.info(f"GET /leagues/{league_id}/standings")
+
+        query = """SELECT t.id AS team_id, t.name AS team_name,
+                          SUM(CASE WHEN gr.winning_team_id = t.id THEN 1 ELSE 0 END) AS wins,
+                          SUM(CASE WHEN gr.winning_team_id IS NOT NULL
+                                    AND gr.winning_team_id != t.id THEN 1 ELSE 0 END) AS losses
+                   FROM Team t
+                   LEFT JOIN Game g ON (g.home_team_id = t.id OR g.away_team_id = t.id)
+                                    AND g.league_id = %s
+                   LEFT JOIN Game_Result gr ON gr.game_id = g.id
+                   WHERE t.league_id = %s
+                   GROUP BY t.id, t.name
+                   ORDER BY wins DESC, losses ASC"""
+        cursor.execute(query, (league_id, league_id))
+        results = cursor.fetchall()
+
+        for idx, row in enumerate(results):
+            row["rank"] = idx + 1
+            row["wins"] = int(row["wins"] or 0)
+            row["losses"] = int(row["losses"] or 0)
+
+        return jsonify(results), 200
+    except Error as e:
+        current_app.logger.error(f"Database error in get_league_standings: {e}")
+        return jsonify({"error": str(e)}), 500
+    finally:
+        cursor.close()
+
+
 # GET /leagues/<id>/disputes — helper for league admin disputes page
 @leagues.route("/leagues/<int:league_id>/disputes", methods=["GET"])
 def get_league_disputes(league_id):

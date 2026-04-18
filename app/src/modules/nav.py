@@ -4,6 +4,8 @@
 
 import streamlit as st
 
+API_BASE = "http://web-api:4000"
+
 
 # ---- General ----------------------------------------------------------------
 def add_space():

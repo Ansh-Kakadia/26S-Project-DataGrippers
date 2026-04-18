@@ -1,66 +1,9 @@
 import streamlit as st
-from modules.nav import SideBarLinks
+import requests
+from modules.nav import SideBarLinks, API_BASE
 SideBarLinks(show_home=False, userAuthStatus="player_persona")
-# -------------------------------------------------------
-# Athlete Season Data
-# -------------------------------------------------------
-SEASONS = [
-    {
-        "season": "Fall 2025",
-        "sport": "Volleyball",
-        "team": "Northeastern University",
-        "stats": {
-            "Games Played": 18,
-            "Sets Played": 52,
-            "Kills": 142,
-            "Kills/Set": 2.73,
-            "Assists": 34,
-            "Digs": 89,
-            "Aces": 12,
-            "Blocks": 28,
-            "Hitting %": ".312",
-            "Errors": 21,
-        },
-    },
-    {
-        "season": "Spring 2025",
-        "sport": "Volleyball",
-        "team": "Northeastern University",
-        "stats": {
-            "Games Played": 14,
-            "Sets Played": 40,
-            "Kills": 108,
-            "Kills/Set": 2.70,
-            "Assists": 22,
-            "Digs": 71,
-            "Aces": 9,
-            "Blocks": 19,
-            "Hitting %": ".289",
-            "Errors": 18,
-        },
-    },
-    {
-        "season": "Fall 2024",
-        "sport": "Volleyball",
-        "team": "Northeastern University",
-        "stats": {
-            "Games Played": 16,
-            "Sets Played": 45,
-            "Kills": 119,
-            "Kills/Set": 2.64,
-            "Assists": 18,
-            "Digs": 65,
-            "Aces": 7,
-            "Blocks": 22,
-            "Hitting %": ".271",
-            "Errors": 24,
-        },
-    },
-]
 
-# -------------------------------------------------------
-# Styles
-# -------------------------------------------------------
+
 def apply_styles():
     st.markdown("""
         <style>
@@ -128,17 +71,45 @@ def apply_styles():
     """, unsafe_allow_html=True)
 
 
-# -------------------------------------------------------
-# Page
-# -------------------------------------------------------
+def fetch_player(player_id):
+    try:
+        r = requests.get(f"{API_BASE}/players/{player_id}", timeout=5)
+        if r.status_code == 200:
+            return r.json()
+    except requests.RequestException as e:
+        st.error(f"API error fetching player: {e}")
+    return None
+
+
+def fetch_stats(player_id, season=None):
+    try:
+        params = {"season": season} if season else {}
+        r = requests.get(f"{API_BASE}/players/{player_id}/stats",
+                         params=params, timeout=5)
+        if r.status_code == 200:
+            return r.json() or {}
+    except requests.RequestException as e:
+        st.error(f"API error fetching stats: {e}")
+    return {}
+
+
 def show():
     apply_styles()
 
-    # Header
-    first = st.session_state.get("first_name", "Yixi")
-    last = st.session_state.get("last_name", "Xu")
-    initials = (first[0]).upper() if first else "Y"
-    full_name = f"{first}"
+    player_id = st.session_state.get("player_id")
+    if not player_id:
+        st.warning("No player logged in. Return to Home.")
+        return
+
+    player = fetch_player(player_id)
+    if not player:
+        st.error("Player not found.")
+        return
+
+    first = player.get("first_name") or st.session_state.get("first_name", "")
+    last = player.get("last_name", "")
+    initials = (first[0] if first else "?").upper()
+    full_name = f"{first} {last}".strip()
 
     col1, col2 = st.columns([3, 2])
     with col1:
@@ -148,28 +119,50 @@ def show():
                 <span class="profile-badge" style="font-size:32px;">{full_name}</span>
             </div>
         """)
+    with col2:
+        st.markdown(
+            f"<div class='profile-role'>{player.get('email','')} · "
+            f"{player.get('university','')}</div>",
+            unsafe_allow_html=True,
+        )
 
     st.markdown("<br>", unsafe_allow_html=True)
 
-    # Season cards
-    for s in SEASONS:
-        stats = s["stats"]
-        headers = "".join(f"<th>{k}</th>" for k in stats.keys())
-        values = "".join(f"<td>{v}</td>" for v in stats.values())
+    season_input = st.text_input(
+        "Filter stats by season (year, e.g. 2025). Leave blank for all seasons.",
+        value="",
+    )
+    season = season_input.strip() or None
+    stats = fetch_stats(player_id, season)
 
-        st.html(f"""
-        <div class="season-card">
-            <div class="season-header">
-                <span>{s['season']}</span>
-                <span>{s['sport']}</span>
-                <span>{s['team']}</span>
-            </div>
-            <table class="stats-table">
-                <thead><tr>{headers}</tr></thead>
-                <tbody><tr>{values}</tr></tbody>
-            </table>
+    label_map = [
+        ("games_played", "Games Played"),
+        ("total_points", "Total Points"),
+        ("total_goals", "Total Goals"),
+        ("total_assists", "Total Assists"),
+        ("total_wins", "Total Wins"),
+        ("games_attended", "Games Attended"),
+    ]
+    headers = "".join(f"<th>{label}</th>" for _, label in label_map)
+    values = "".join(
+        f"<td>{stats.get(key) if stats.get(key) is not None else 0}</td>"
+        for key, _ in label_map
+    )
+
+    season_label = f"Season {season}" if season else "All Seasons"
+
+    st.html(f"""
+    <div class="season-card">
+        <div class="season-header">
+            <span>{season_label}</span>
+            <span>Career Totals</span>
         </div>
-        """)
+        <table class="stats-table">
+            <thead><tr>{headers}</tr></thead>
+            <tbody><tr>{values}</tr></tbody>
+        </table>
+    </div>
+    """)
 
 
 show()

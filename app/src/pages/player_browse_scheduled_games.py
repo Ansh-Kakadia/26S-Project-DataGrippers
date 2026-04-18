@@ -1,78 +1,9 @@
 import streamlit as st
-from datetime import datetime
-from modules.nav import SideBarLinks
+import requests
+from modules.nav import SideBarLinks, API_BASE
 SideBarLinks(show_home=False, userAuthStatus="player_persona")
-# -------------------------------------------------------
-# Schedule Data
-# -------------------------------------------------------
-GAMES = [
-    {
-        "location": "Matthew's Stadium",
-        "home": "Northeastern University",
-        "away": "Boston University",
-        "time": datetime(2026, 3, 6, 15, 0),
-    },
-    {
-        "location": "Fenway Stadium",
-        "home": "Northeastern University",
-        "away": "Bentley University",
-        "time": datetime(2026, 3, 7, 15, 0),
-    },
-    {
-        "location": "Matthew's Stadium",
-        "home": "Northeastern University",
-        "away": "Boston University",
-        "time": datetime(2026, 3, 10, 15, 0),
-    },
-    {
-        "location": "Fenway Stadium",
-        "home": "Harvard University",
-        "away": "Northeastern University",
-        "time": datetime(2026, 3, 15, 15, 0),
-    },
-    {
-        "location": "Matthew's Stadium",
-        "home": "Northeastern University",
-        "away": "Boston University",
-        "time": datetime(2026, 3, 19, 15, 0),
-    },
-    {
-        "location": "Fenway Stadium",
-        "home": "Emerson College",
-        "away": "Northeastern University",
-        "time": datetime(2026, 3, 25, 15, 0),
-    },
-]
 
-TRAININGS = [
-    {
-        "location": "Matthews Arena",
-        "description": "Pre-season conditioning",
-        "time": datetime(2026, 3, 4, 10, 0),
-    },
-    {
-        "location": "Cabot Center",
-        "description": "Skill drills",
-        "time": datetime(2026, 3, 11, 10, 0),
-    },
-]
 
-MEETINGS = [
-    {
-        "location": "Zoom",
-        "description": "Team strategy review",
-        "time": datetime(2026, 3, 5, 18, 0),
-    },
-    {
-        "location": "Curry Student Center",
-        "description": "Season kickoff",
-        "time": datetime(2026, 3, 8, 17, 0),
-    },
-]
-
-# -------------------------------------------------------
-# Styles
-# -------------------------------------------------------
 def apply_styles():
     st.markdown("""
         <style>
@@ -121,106 +52,101 @@ def apply_styles():
     """, unsafe_allow_html=True)
 
 
-# -------------------------------------------------------
-# Page
-# -------------------------------------------------------
+def fetch_schedule(player_id):
+    try:
+        r = requests.get(f"{API_BASE}/players/{player_id}/schedule", timeout=5)
+        if r.status_code == 200:
+            return r.json()
+    except requests.RequestException as e:
+        st.error(f"API error: {e}")
+    return []
+
+
+def fmt_game_time(game_date, game_time):
+    date_part = (game_date or "").split(" ")[0]
+    time_part = (game_time or "").split(" ")[-1][:5] if game_time else ""
+    return f"{date_part} {time_part}".strip()
+
+
 def show():
     apply_styles()
 
-    # Header row: profile left, title right
+    player_id = st.session_state.get("player_id")
+    if not player_id:
+        st.warning("No player logged in. Return to Home.")
+        return
+
     col1, col2 = st.columns([3, 2])
     with col1:
-        # Get name from session state if available, else default
-        first = st.session_state.get("first_name", "Yixi")
-        initials = (first[0]).upper() if first else "Y"
-        full_name = f"{first}"
+        first = st.session_state.get("first_name", "Maya")
+        initials = (first[0]).upper() if first else "M"
         st.html(f"""
             <div class="profile-badge">
                 <span class="profile-initials">{initials}</span>
-                <span>{full_name}</span>
+                <span>{first}</span>
             </div>
         """)
     with col2:
-        st.markdown("<h1 style='text-align:right; font-family:monospace;'>Schedule</h1>", unsafe_allow_html=True)
+        st.markdown(
+            "<h1 style='text-align:right; font-family:monospace;'>Schedule</h1>",
+            unsafe_allow_html=True,
+        )
 
     st.markdown("<br>", unsafe_allow_html=True)
 
-    # Tabs
     tab1, tab2, tab3 = st.tabs(["**Games**", "Trainings", "Meetings"])
 
-    # --- Games Tab ---
+    games = fetch_schedule(player_id)
+
     with tab1:
-        rows_html = ""
-        for g in GAMES:
-            rows_html += f"""
-            <tr>
-                <td>{g['location']}</td>
-                <td>{g['home']}</td>
-                <td>{g['away']}</td>
-                <td>{g['time'].strftime('%-m/%d/%Y %I:%M %p')}</td>
-            </tr>
-            """
-        st.html(f"""
-        <table class="schedule-table">
-            <thead>
+        if not games:
+            st.markdown(
+                "<div style='font-family:monospace;color:#888;padding:16px;'>"
+                "No games scheduled.</div>",
+                unsafe_allow_html=True,
+            )
+        else:
+            rows_html = ""
+            for g in games:
+                rows_html += f"""
                 <tr>
-                    <th>Location</th>
-                    <th>Home</th>
-                    <th>Away</th>
-                    <th>Time</th>
+                    <td>{g.get('venue_name','')}</td>
+                    <td>{g.get('home_team_name','')}</td>
+                    <td>{g.get('away_team_name','')}</td>
+                    <td>{fmt_game_time(g.get('game_date'), g.get('game_time'))}</td>
+                    <td>{g.get('sport','')}</td>
+                    <td>{g.get('status','')}</td>
                 </tr>
-            </thead>
-            <tbody>{rows_html}</tbody>
-        </table>
-        """)
+                """
+            st.html(f"""
+            <table class="schedule-table">
+                <thead>
+                    <tr>
+                        <th>Location</th>
+                        <th>Home</th>
+                        <th>Away</th>
+                        <th>Time</th>
+                        <th>Sport</th>
+                        <th>Status</th>
+                    </tr>
+                </thead>
+                <tbody>{rows_html}</tbody>
+            </table>
+            """)
 
-    # --- Trainings Tab ---
     with tab2:
-        rows_html = ""
-        for t in TRAININGS:
-            rows_html += f"""
-            <tr>
-                <td>{t['location']}</td>
-                <td>{t['description']}</td>
-                <td>{t['time'].strftime('%-m/%d/%Y %I:%M %p')}</td>
-            </tr>
-            """
-        st.html(f"""
-        <table class="schedule-table">
-            <thead>
-                <tr>
-                    <th>Location</th>
-                    <th>Description</th>
-                    <th>Time</th>
-                </tr>
-            </thead>
-            <tbody>{rows_html}</tbody>
-        </table>
-        """)
+        st.markdown(
+            "<div style='font-family:monospace;color:#888;padding:16px;'>"
+            "No trainings scheduled. Trainings are not tracked in the current system.</div>",
+            unsafe_allow_html=True,
+        )
 
-    # --- Meetings Tab ---
     with tab3:
-        rows_html = ""
-        for m in MEETINGS:
-            rows_html += f"""
-            <tr>
-                <td>{m['location']}</td>
-                <td>{m['description']}</td>
-                <td>{m['time'].strftime('%-m/%d/%Y %I:%M %p')}</td>
-            </tr>
-            """
-        st.html(f"""
-        <table class="schedule-table">
-            <thead>
-                <tr>
-                    <th>Location</th>
-                    <th>Description</th>
-                    <th>Time</th>
-                </tr>
-            </thead>
-            <tbody>{rows_html}</tbody>
-        </table>
-        """)
+        st.markdown(
+            "<div style='font-family:monospace;color:#888;padding:16px;'>"
+            "No meetings scheduled. See team messages on your team page.</div>",
+            unsafe_allow_html=True,
+        )
 
 
 show()

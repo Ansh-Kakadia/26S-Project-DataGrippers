@@ -221,6 +221,58 @@ def get_team_schedule(team_id):
         cursor.close()
 
 
+# GET /teams/<id>/h2h/<opp_id> — head-to-head record + history
+@teams.route("/teams/<int:team_id>/h2h/<int:opp_id>", methods=["GET"])
+def get_team_h2h(team_id, opp_id):
+    cursor = get_db().cursor(dictionary=True)
+    try:
+        current_app.logger.info(f"GET /teams/{team_id}/h2h/{opp_id}")
+
+        record_query = """SELECT
+                              SUM(CASE WHEN gr.winning_team_id = %s THEN 1 ELSE 0 END) AS my_wins,
+                              SUM(CASE WHEN gr.winning_team_id = %s THEN 1 ELSE 0 END) AS their_wins
+                          FROM Game g
+                          JOIN Game_Result gr ON gr.game_id = g.id
+                          WHERE ((g.home_team_id = %s AND g.away_team_id = %s)
+                                OR (g.home_team_id = %s AND g.away_team_id = %s))"""
+        cursor.execute(record_query,
+                       (team_id, opp_id, team_id, opp_id, opp_id, team_id))
+        record = cursor.fetchone() or {"my_wins": 0, "their_wins": 0}
+
+        history_query = """SELECT g.id AS game_id, g.game_date,
+                                  g.home_team_id, g.away_team_id,
+                                  gr.home_score, gr.away_score,
+                                  gr.winning_team_id
+                           FROM Game g
+                           JOIN Game_Result gr ON gr.game_id = g.id
+                           WHERE ((g.home_team_id = %s AND g.away_team_id = %s)
+                                OR (g.home_team_id = %s AND g.away_team_id = %s))
+                           ORDER BY g.game_date DESC"""
+        cursor.execute(history_query,
+                       (team_id, opp_id, opp_id, team_id))
+        history = cursor.fetchall()
+
+        for g in history:
+            g["result"] = "W" if g["winning_team_id"] == team_id else "L"
+            if g["home_team_id"] == team_id:
+                g["my_score"] = g["home_score"]
+                g["opp_score"] = g["away_score"]
+            else:
+                g["my_score"] = g["away_score"]
+                g["opp_score"] = g["home_score"]
+
+        return jsonify({
+            "my_wins": int(record["my_wins"] or 0),
+            "their_wins": int(record["their_wins"] or 0),
+            "history": history,
+        }), 200
+    except Error as e:
+        current_app.logger.error(f"Database error in get_team_h2h: {e}")
+        return jsonify({"error": str(e)}), 500
+    finally:
+        cursor.close()
+
+
 # GET /teams/<id>/messages — team messages
 @teams.route("/teams/<int:team_id>/messages", methods=["GET"])
 def get_team_messages(team_id):

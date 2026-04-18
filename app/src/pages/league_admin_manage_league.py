@@ -1,74 +1,24 @@
 import streamlit as st
+import requests
 from datetime import datetime
-from modules.nav import SideBarLinks
+from modules.nav import SideBarLinks, API_BASE
 SideBarLinks(show_home=False, userAuthStatus="league_admin_persona")
 
-# -------------------------------------------------------
-# Mock Data
-# -------------------------------------------------------
-LEAGUES = ["Husky League", "Bull Games", "Ivy League"]
 
-LEAGUE_DATA = {
-    "Husky League": {
-        "sport": "Volleyball",
-        "roster_limit": 12,
-        "skill_level": "Competitive",
-        "season_start": "09/10/2025",
-        "season_end": "12/06/2025",
-    },
-    "Bull Games": {
-        "sport": "Basketball",
-        "roster_limit": 10,
-        "skill_level": "Recreational",
-        "season_start": "01/15/2026",
-        "season_end": "04/30/2026",
-    },
-    "Ivy League": {
-        "sport": "Football",
-        "roster_limit": 22,
-        "skill_level": "Intermediate",
-        "season_start": "08/01/2025",
-        "season_end": "11/20/2025",
-    },
-}
-
-TEAMS_DATA = {
-    "Husky League": [
-        {"name": "Team 1", "status": "Approved"},
-        {"name": "Team 2", "status": "Pending"},
-        {"name": "Team 3", "status": "Approved"},
-        {"name": "Team 4", "status": "Pending"},
-        {"name": "Team 5", "status": "Approved"},
-    ],
-    "Bull Games": [
-        {"name": "Bulls A",   "status": "Approved"},
-        {"name": "Bulls B",   "status": "Pending"},
-        {"name": "Red Squad", "status": "Approved"},
-    ],
-    "Ivy League": [
-        {"name": "Green Team", "status": "Approved"},
-        {"name": "Gold Squad", "status": "Pending"},
-        {"name": "Blue Crew",  "status": "Approved"},
-        {"name": "Silver FC",  "status": "Pending"},
-    ],
-}
-
-SPORTS       = ["Volleyball", "Basketball", "Football"]
+SPORTS = ["Volleyball", "Basketball", "Football", "Soccer", "Tennis",
+          "Hockey", "Softball", "Baseball"]
 SKILL_LEVELS = ["Beginner", "Recreational", "Intermediate", "Competitive"]
-ROSTER_OPTS  = list(range(1, 101))
+STATUSES = ["Pending", "Active", "Finished"]
+ROSTER_OPTS = list(range(1, 101))
 
-# -------------------------------------------------------
-# Styles
-# -------------------------------------------------------
+
 def apply_styles():
     st.markdown("""
         <style>
-            /* Hide all labels in the left panel */
             div[data-testid="stTextInput"] label,
             div[data-testid="stSelectbox"] label {
                 display: none;
             }
-
             .row-label {
                 font-family: monospace;
                 font-size: 15px;
@@ -79,43 +29,125 @@ def apply_styles():
         </style>
     """, unsafe_allow_html=True)
 
-# -------------------------------------------------------
-# Page
-# -------------------------------------------------------
+
+def fetch_leagues():
+    try:
+        r = requests.get(f"{API_BASE}/leagues", timeout=5)
+        if r.status_code == 200:
+            return r.json()
+    except requests.RequestException as e:
+        st.error(f"API error: {e}")
+    return []
+
+
+def fetch_league_teams(league_id):
+    try:
+        r = requests.get(f"{API_BASE}/leagues/{league_id}/teams", timeout=5)
+        if r.status_code == 200:
+            return r.json()
+    except requests.RequestException as e:
+        st.error(f"API error: {e}")
+    return []
+
+
+def update_league(league_id, payload):
+    try:
+        r = requests.put(f"{API_BASE}/leagues/{league_id}",
+                         json=payload, timeout=5)
+        return r.status_code in (200, 201)
+    except requests.RequestException:
+        return False
+
+
+def update_team_status(team_id, status):
+    try:
+        r = requests.put(f"{API_BASE}/teams/{team_id}",
+                         json={"status": status}, timeout=5)
+        return r.status_code in (200, 201)
+    except requests.RequestException:
+        return False
+
+
+def delete_team(team_id):
+    try:
+        r = requests.delete(f"{API_BASE}/teams/{team_id}", timeout=5)
+        return r.status_code in (200, 204)
+    except requests.RequestException:
+        return False
+
+
+def fmt_date_for_input(raw):
+    if not raw:
+        return ""
+    s = str(raw).split(" ")[0]
+    for in_fmt, out_fmt in [
+        ("%Y-%m-%d", "%m/%d/%Y"),
+        ("%a, %d %b %Y %H:%M:%S GMT", "%m/%d/%Y"),
+    ]:
+        try:
+            return datetime.strptime(s if in_fmt == "%Y-%m-%d" else str(raw)[:29], in_fmt).strftime(out_fmt)
+        except ValueError:
+            continue
+    return s
+
+
+def parse_date_to_iso(mmddyyyy):
+    try:
+        return datetime.strptime(mmddyyyy, "%m/%d/%Y").strftime("%Y-%m-%d")
+    except ValueError:
+        return None
+
+
+def pick_index(options, value, fallback=0):
+    if value in options:
+        return options.index(value)
+    return fallback
+
+
 def show():
     apply_styles()
 
-    st.markdown("<h1 style='font-family:monospace; text-align:center;'>Manage League</h1>", unsafe_allow_html=True)
-    
+    st.markdown("<h1 style='font-family:monospace; text-align:center;'>Manage League</h1>",
+                unsafe_allow_html=True)
     st.markdown("<br>", unsafe_allow_html=True)
-    st.markdown("<br>", unsafe_allow_html=True)
-    # Select League — real Streamlit dropdown
-    lbl_col, sel_col, _ = st.columns([1.2, 2, 4])
+
+    leagues = fetch_leagues()
+    if not leagues:
+        st.info("No leagues available.")
+        return
+
+    league_map = {
+        f"{l.get('league_name','')} ({l.get('sport','')} — {l.get('season','')})": l
+        for l in leagues
+    }
+
+    lbl_col, sel_col, _ = st.columns([1.2, 3, 2])
     with lbl_col:
-        st.markdown("<div style='font-family:monospace;font-size:20px;font-weight:bold;padding-top:6px;'>Select League</div>", unsafe_allow_html=True)
+        st.markdown("<div style='font-family:monospace;font-size:20px;font-weight:bold;padding-top:6px;'>Select League</div>",
+                    unsafe_allow_html=True)
     with sel_col:
-        selected_league = st.selectbox("league_select", LEAGUES, label_visibility="collapsed")
+        selected_label = st.selectbox("league_select", list(league_map.keys()),
+                                      label_visibility="collapsed")
 
-    data  = LEAGUE_DATA[selected_league]
-    teams = TEAMS_DATA[selected_league]
+    league = league_map[selected_label]
+    league_id = league["id"]
 
-    # Reset dates when league changes
-    if st.session_state.get("_last_league") != selected_league:
-        st.session_state["_last_league"]      = selected_league
-        st.session_state["season_start_val"]  = data["season_start"]
-        st.session_state["season_end_val"]    = data["season_end"]
-    st.session_state.setdefault("season_start_val", data["season_start"])
-    st.session_state.setdefault("season_end_val",   data["season_end"])
+    if st.session_state.get("_last_league_id") != league_id:
+        st.session_state["_last_league_id"] = league_id
+        st.session_state["season_start_val"] = fmt_date_for_input(league.get("registration_start"))
+        st.session_state["season_end_val"] = fmt_date_for_input(league.get("registration_end"))
+
     st.markdown("<hr style='margin: 8px 0;'>", unsafe_allow_html=True)
     st.markdown("<br>", unsafe_allow_html=True)
 
     left, spacer, right = st.columns([5, 1, 6])
 
-    # Aligned section headers
     with left:
-        st.markdown("<div style='font-family:monospace;font-size:18px;font-weight:bold;margin-bottom:8px;'>&nbsp;</div>", unsafe_allow_html=True)
+        st.markdown("<div style='font-family:monospace;font-size:18px;font-weight:bold;margin-bottom:8px;'>League Configuration</div>",
+                    unsafe_allow_html=True)
     with right:
-        st.markdown("<div style='font-family:monospace;font-size:18px;font-weight:bold;margin-bottom:8px;'>Teams Configuration</div>", unsafe_allow_html=True)
+        st.markdown("<div style='font-family:monospace;font-size:18px;font-weight:bold;margin-bottom:8px;'>Teams Configuration</div>",
+                    unsafe_allow_html=True)
 
     # ---- LEFT: League Config ----
     with left:
@@ -124,74 +156,119 @@ def show():
             with la:
                 st.markdown(f"<div class='row-label'>{label}</div>", unsafe_allow_html=True)
             with lb:
-                widget_fn()
+                return widget_fn()
 
-        row("League Name",  lambda: st.text_input("league_name", value=selected_league, label_visibility="collapsed"))
-        row("Sport:",        lambda: st.selectbox("sport", SPORTS, index=SPORTS.index(data["sport"]), label_visibility="collapsed"))
-        row("Roster Limit:", lambda: st.selectbox("roster_limit", ROSTER_OPTS, index=ROSTER_OPTS.index(data["roster_limit"]), label_visibility="collapsed"))
-        row("Skill Level",   lambda: st.selectbox("skill_level", SKILL_LEVELS, index=SKILL_LEVELS.index(data["skill_level"]), label_visibility="collapsed"))
+        new_name = row("League Name", lambda: st.text_input(
+            "league_name", value=league.get("league_name", ""),
+            label_visibility="collapsed"))
+        new_sport = row("Sport:", lambda: st.selectbox(
+            "sport", SPORTS,
+            index=pick_index(SPORTS, league.get("sport"), 0),
+            label_visibility="collapsed"))
+        new_roster = row("Roster Limit:", lambda: st.selectbox(
+            "roster_limit", ROSTER_OPTS,
+            index=pick_index(ROSTER_OPTS, league.get("roster_limit"), 9),
+            label_visibility="collapsed"))
+        new_skill = row("Skill Level", lambda: st.selectbox(
+            "skill_level", SKILL_LEVELS,
+            index=pick_index(SKILL_LEVELS, league.get("skill_level"), 0),
+            label_visibility="collapsed"))
+        new_status = row("Status:", lambda: st.selectbox(
+            "status", STATUSES,
+            index=pick_index(STATUSES, league.get("status"), 0),
+            label_visibility="collapsed"))
 
-        # Season Start
         la, lb = st.columns([2, 3])
         with la:
-            st.markdown("<div class='row-label'>Season Start:</div>", unsafe_allow_html=True)
+            st.markdown("<div class='row-label'>Reg Start:</div>", unsafe_allow_html=True)
         with lb:
-            new_start = st.text_input("season_start_input", value=st.session_state["season_start_val"], placeholder="MM/DD/YYYY", label_visibility="collapsed")
-            if new_start != st.session_state["season_start_val"]:
-                try:
-                    datetime.strptime(new_start, "%m/%d/%Y")
-                    st.session_state["season_start_val"] = new_start
-                except ValueError:
-                    st.warning("Use MM/DD/YYYY format.")
+            new_start = st.text_input("season_start_input",
+                                      value=st.session_state["season_start_val"],
+                                      placeholder="MM/DD/YYYY",
+                                      label_visibility="collapsed")
 
-        # Season End
         la, lb = st.columns([2, 3])
         with la:
-            st.markdown("<div class='row-label'>Season End:</div>", unsafe_allow_html=True)
+            st.markdown("<div class='row-label'>Reg End:</div>", unsafe_allow_html=True)
         with lb:
-            new_end = st.text_input("season_end_input", value=st.session_state["season_end_val"], placeholder="MM/DD/YYYY", label_visibility="collapsed")
-            if new_end != st.session_state["season_end_val"]:
-                try:
-                    datetime.strptime(new_end, "%m/%d/%Y")
-                    st.session_state["season_end_val"] = new_end
-                except ValueError:
-                    st.warning("Use MM/DD/YYYY format.")
+            new_end = st.text_input("season_end_input",
+                                    value=st.session_state["season_end_val"],
+                                    placeholder="MM/DD/YYYY",
+                                    label_visibility="collapsed")
 
         st.markdown("<br>", unsafe_allow_html=True)
-        st.button("Finalize")
-    
-    with right:
-        rows_html = ""
-        for t in teams:
-            if t["status"] == "Approved":
-                status_html = "<span style='color:#2e7d32;font-weight:bold;font-family:monospace;'>Approved</span>"
-                action_html = """<button style="font-family:monospace;padding:5px 14px;border:1.5px solid #c61717;
-                                color:#c61717;border-radius:6px;background:white;cursor:pointer;">Remove</button>"""
+        if st.button("Save Config", type="primary"):
+            payload = {
+                "league_name": new_name,
+                "sport": new_sport,
+                "roster_limit": int(new_roster),
+                "skill_level": new_skill,
+                "status": new_status,
+            }
+            iso_start = parse_date_to_iso(new_start)
+            iso_end = parse_date_to_iso(new_end)
+            if iso_start:
+                payload["registration_start"] = iso_start
+            if iso_end:
+                payload["registration_end"] = iso_end
+            if update_league(league_id, payload):
+                st.success("League updated.")
+                st.rerun()
             else:
-                status_html = "<span style='color:#aaa;font-family:monospace;'>Pending</span>"
-                action_html = """
-                    <button style="font-family:monospace;padding:5px 14px;border:1.5px solid #2e7d32;
-                        color:#2e7d32;border-radius:6px;background:white;cursor:pointer;margin-right:6px;">Accept</button>
-                    <button style="font-family:monospace;padding:5px 14px;border:1.5px solid #c61717;
-                        color:#c61717;border-radius:6px;background:white;cursor:pointer;">Reject</button>"""
-            rows_html += f"""
-            <tr>
-                <td style="padding:11px 14px;font-family:monospace;border:1px solid #ddd;">{t['name']}</td>
-                <td style="padding:11px 14px;border:1px solid #ddd;">{status_html}</td>
-                <td style="padding:11px 14px;border:1px solid #ddd;">{action_html}</td>
-            </tr>"""
+                st.error("Update failed.")
 
-        st.html(f"""
-        <table style="width:100%;border-collapse:collapse;border:2px solid #333;font-family:monospace;font-size:15px;">
-            <thead>
-                <tr style="background:#f5f5f5;">
-                    <th style="padding:10px 14px;border:1px solid #bbb;font-weight:bold;">Name</th>
-                    <th style="padding:10px 14px;border:1px solid #bbb;font-weight:bold;">Status</th>
-                    <th style="padding:10px 14px;border:1px solid #bbb;font-weight:bold;">Actions</th>
-                </tr>
-            </thead>
-            <tbody>{rows_html}</tbody>
-        </table>
-        """)
+    # ---- RIGHT: Teams ----
+    with right:
+        teams = fetch_league_teams(league_id)
+        if not teams:
+            st.markdown("<div style='font-family:monospace; color:#888; padding:20px;'>No teams in this league.</div>",
+                        unsafe_allow_html=True)
+        else:
+            header_cols = st.columns([2.5, 2, 3])
+            with header_cols[0]:
+                st.markdown("<div style='font-family:monospace;font-weight:bold;padding:8px;background:#f5f5f5;border:1px solid #bbb;'>Name</div>",
+                            unsafe_allow_html=True)
+            with header_cols[1]:
+                st.markdown("<div style='font-family:monospace;font-weight:bold;padding:8px;background:#f5f5f5;border:1px solid #bbb;'>Status</div>",
+                            unsafe_allow_html=True)
+            with header_cols[2]:
+                st.markdown("<div style='font-family:monospace;font-weight:bold;padding:8px;background:#f5f5f5;border:1px solid #bbb;'>Actions</div>",
+                            unsafe_allow_html=True)
+
+            for t in teams:
+                tid = t["id"]
+                status = t.get("status", "")
+                status_color = {
+                    "Active": "#2e7d32",
+                    "Approved": "#2e7d32",
+                    "Pending": "#aaa",
+                    "Inactive": "#c96a00",
+                    "Rejected": "#c61717",
+                }.get(status, "#333")
+
+                cols = st.columns([2.5, 2, 3])
+                with cols[0]:
+                    st.markdown(f"<div style='font-family:monospace;padding:10px;border:1px solid #ddd;'>{t.get('name','')}</div>",
+                                unsafe_allow_html=True)
+                with cols[1]:
+                    st.markdown(f"<div style='font-family:monospace;padding:10px;border:1px solid #ddd;color:{status_color};font-weight:bold;'>{status}</div>",
+                                unsafe_allow_html=True)
+                with cols[2]:
+                    bc1, bc2, bc3 = st.columns(3)
+                    if status == "Pending":
+                        with bc1:
+                            if st.button("Accept", key=f"acc_{tid}"):
+                                if update_team_status(tid, "Active"):
+                                    st.rerun()
+                        with bc2:
+                            if st.button("Reject", key=f"rej_{tid}"):
+                                if update_team_status(tid, "Rejected"):
+                                    st.rerun()
+                    else:
+                        with bc1:
+                            if st.button("Remove", key=f"del_{tid}"):
+                                if delete_team(tid):
+                                    st.rerun()
+
 
 show()

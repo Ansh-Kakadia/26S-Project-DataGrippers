@@ -1,61 +1,10 @@
 import streamlit as st
+import requests
 from datetime import datetime
-from modules.nav import SideBarLinks
+from modules.nav import SideBarLinks, API_BASE
 SideBarLinks(show_home=False, userAuthStatus="coach_persona")
 
-# -------------------------------------------------------
-# Mock Data
-# -------------------------------------------------------
-MY_TEAM = "Huskies"
 
-UPCOMING_GAMES = [
-    {"opponent": "Team 1", "date": datetime(2026, 4, 7)},
-    {"opponent": "Team 2", "date": datetime(2026, 4, 10)},
-    {"opponent": "Team 3", "date": datetime(2026, 4, 14)},
-]
-
-STANDINGS = [
-    {"rank": 1, "team": "Huskies",  "w": 14, "l": 0},
-    {"rank": 2, "team": "Team 4",   "w": 10, "l": 4},
-    {"rank": 3, "team": "Team 2",   "w": 8,  "l": 6},
-    {"rank": 4, "team": "Team 7",   "w": 7,  "l": 5},
-    {"rank": 5, "team": "Team 1",   "w": 6,  "l": 8},
-    {"rank": 6, "team": "Team 3",   "w": 4,  "l": 10},
-]
-
-HEAD_TO_HEAD = {
-    "Team 4": {
-        "my_wins": 2,
-        "their_wins": 1,
-        "history": [
-            {"date": "Mar 3",  "result": "W", "score": "36 - 24"},
-            {"date": "Feb 17", "result": "L", "score": "32 - 28"},
-            {"date": "Feb 3",  "result": "W", "score": "40 - 35"},
-        ],
-    },
-    "Team 2": {
-        "my_wins": 3,
-        "their_wins": 0,
-        "history": [
-            {"date": "Mar 10", "result": "W", "score": "41 - 30"},
-            {"date": "Feb 22", "result": "W", "score": "38 - 27"},
-            {"date": "Jan 15", "result": "W", "score": "44 - 31"},
-        ],
-    },
-    "Team 1": {
-        "my_wins": 1,
-        "their_wins": 2,
-        "history": [
-            {"date": "Mar 18", "result": "L", "score": "28 - 33"},
-            {"date": "Feb 10", "result": "W", "score": "35 - 29"},
-            {"date": "Jan 28", "result": "L", "score": "30 - 37"},
-        ],
-    },
-}
-
-# -------------------------------------------------------
-# Styles
-# -------------------------------------------------------
 def apply_styles():
     st.markdown("""
         <style>
@@ -132,7 +81,7 @@ def apply_styles():
             .h2h-history-box {
                 border: 1.5px solid #ccc;
                 margin-top: 16px;
-                max-height: 200px;
+                max-height: 240px;
                 overflow-y: auto;
             }
             .h2h-row {
@@ -150,77 +99,150 @@ def apply_styles():
         </style>
     """, unsafe_allow_html=True)
 
-# -------------------------------------------------------
-# Page
-# -------------------------------------------------------
+
+def fetch_json(path):
+    try:
+        r = requests.get(f"{API_BASE}{path}", timeout=5)
+        if r.status_code == 200:
+            return r.json()
+    except requests.RequestException as e:
+        st.error(f"API error on {path}: {e}")
+    return None
+
+
+def fmt_game_date(raw):
+    if not raw:
+        return ""
+    s = str(raw).split(" ")[0]
+    try:
+        d = datetime.strptime(s, "%Y-%m-%d")
+        day = d.day
+        suffix = "th" if 11 <= day <= 13 else {1: "st", 2: "nd", 3: "rd"}.get(day % 10, "th")
+        return d.strftime(f"%a, %b {day}{suffix}")
+    except ValueError:
+        return s
+
+
 def show():
     apply_styles()
 
-    st.markdown("<h1 style='font-family:monospace; text-align:center;'>Huskies</h1>", unsafe_allow_html=True)
+    team_id = st.session_state.get("team_id")
+    if not team_id:
+        st.warning("No team in session. Return to Home.")
+        return
 
-    # ---- Upcoming Games (full width) ----
+    team = fetch_json(f"/teams/{team_id}")
+    if not team:
+        st.error("Team not found.")
+        return
+
+    team_name = team.get("name", f"Team {team_id}")
+    league_id = team.get("league_id")
+
+    st.markdown(f"<h1 style='font-family:monospace; text-align:center;'>{team_name}</h1>",
+                unsafe_allow_html=True)
+
+    # ---- Upcoming Games ----
     st.markdown('<div class="dash-label">Upcoming Games</div>', unsafe_allow_html=True)
-    games_html = ""
-    for g in UPCOMING_GAMES:
-        d = g["date"].day
-        suffix = "th" if 11 <= d <= 13 else {1:"st",2:"nd",3:"rd"}.get(d%10, "th")
-        day = g["date"].strftime(f"%a, %b %-d{suffix}")
-        games_html += f"""
-        <div class="game-card">
-            <span class="game-matchup">{MY_TEAM} vs. {g['opponent']}</span>
-            <span class="game-date">{day}</span>
-        </div>"""
-    st.html(f'<div style="border:2px solid #333; padding:12px;">{games_html}</div>')
+    games = fetch_json(f"/teams/{team_id}/schedule?status=Scheduled") or []
+    if not games:
+        games = fetch_json(f"/teams/{team_id}/schedule") or []
+
+    if not games:
+        st.html('<div style="border:2px solid #333; padding:12px; font-family:monospace; color:#888;">'
+                'No upcoming games.</div>')
+    else:
+        games_html = ""
+        for g in games[:5]:
+            home = g.get("home_team_name", "")
+            away = g.get("away_team_name", "")
+            opp = away if home == team_name else home
+            games_html += f"""
+            <div class="game-card">
+                <span class="game-matchup">{team_name} vs. {opp}</span>
+                <span class="game-date">{fmt_game_date(g.get('game_date'))}</span>
+            </div>"""
+        st.html(f'<div style="border:2px solid #333; padding:12px;">{games_html}</div>')
 
     st.markdown("<br>", unsafe_allow_html=True)
 
-    # ---- Division Standings (full width) ----
+    # ---- Division Standings ----
     st.markdown('<div class="dash-label">Division Standings</div>', unsafe_allow_html=True)
-    rows = ""
-    for s in STANDINGS:
-        row_class = "my-team" if s["team"] == MY_TEAM else ""
-        rows += f"<tr class='{row_class}'><td>{s['rank']}</td><td>{s['team']}</td><td>{s['w']}</td><td>{s['l']}</td></tr>"
-    st.html(f"""
-    <div style="border:2px solid #333; padding:12px;">
-        <table class="standings-table">
-            <thead><tr><th>Rank</th><th>Team</th><th>W</th><th>L</th></tr></thead>
-            <tbody>{rows}</tbody>
-        </table>
-    </div>
-    """)
+    standings = fetch_json(f"/leagues/{league_id}/standings") or []
+    if not standings:
+        st.html('<div style="border:2px solid #333; padding:12px; font-family:monospace; color:#888;">'
+                'No standings available.</div>')
+    else:
+        rows = ""
+        for s in standings:
+            row_class = "my-team" if s.get("team_id") == team_id else ""
+            rows += (f"<tr class='{row_class}'><td>{s.get('rank','')}</td>"
+                     f"<td>{s.get('team_name','')}</td>"
+                     f"<td>{s.get('wins',0)}</td>"
+                     f"<td>{s.get('losses',0)}</td></tr>")
+        st.html(f"""
+        <div style="border:2px solid #333; padding:12px;">
+            <table class="standings-table">
+                <thead><tr><th>Rank</th><th>Team</th><th>W</th><th>L</th></tr></thead>
+                <tbody>{rows}</tbody>
+            </table>
+        </div>
+        """)
 
     st.markdown("<br>", unsafe_allow_html=True)
 
-    # ---- Head-to-Head (full width) ----
-    selected_team = st.selectbox("Opponent", list(HEAD_TO_HEAD.keys()), label_visibility="collapsed")
-    h2h = HEAD_TO_HEAD[selected_team]
+    # ---- Head-to-Head ----
+    opponents = team.get("head_to_head") or []
+    opp_map = {o.get("opponent_name", f"Team {o['opponent_id']}"): o["opponent_id"]
+               for o in opponents if o.get("opponent_id")}
+
+    if not opp_map:
+        st.html('<div class="h2h-box"><div class="h2h-title">Head-to-Head</div>'
+                '<div style="text-align:center; color:#888;">No opponent history yet.</div></div>')
+        return
+
+    selected_name = st.selectbox("Opponent", list(opp_map.keys()),
+                                 label_visibility="collapsed")
+    opp_id = opp_map[selected_name]
+    h2h = fetch_json(f"/teams/{team_id}/h2h/{opp_id}") or {
+        "my_wins": 0, "their_wins": 0, "history": [],
+    }
 
     history_rows = ""
-    for game in h2h["history"]:
-        cls = "win" if game["result"] == "W" else "loss"
-        label = f"W {game['score']}" if game["result"] == "W" else f"L {game['score']}"
+    for game in h2h.get("history", []):
+        result = game.get("result", "")
+        cls = "win" if result == "W" else "loss"
+        my_score = game.get("my_score", 0)
+        opp_score = game.get("opp_score", 0)
+        game_date = fmt_game_date(game.get("game_date"))
+        label = f"{result} {my_score} - {opp_score}"
         history_rows += f"""
         <div class="h2h-row">
-            <span>{game['date']}</span>
+            <span>{game_date}</span>
             <span class="{cls}">{label}</span>
         </div>"""
+
+    if not history_rows:
+        history_rows = ('<div style="padding:20px; text-align:center; color:#888;">'
+                        'No prior games.</div>')
 
     st.html(f"""
     <div class="h2h-box">
         <div class="h2h-title">Head-to-Head</div>
         <div class="h2h-scores">
             <div class="h2h-team-box">
-                <div class="h2h-team-name">{MY_TEAM}</div>
-                <div class="h2h-wins">{h2h['my_wins']} Wins</div>
+                <div class="h2h-team-name">{team_name}</div>
+                <div class="h2h-wins">{h2h.get('my_wins',0)} Wins</div>
             </div>
             <span class="h2h-dash">—</span>
             <div class="h2h-team-box">
-                <div class="h2h-team-name">{selected_team}</div>
-                <div class="h2h-wins">{h2h['their_wins']} Wins</div>
+                <div class="h2h-team-name">{selected_name}</div>
+                <div class="h2h-wins">{h2h.get('their_wins',0)} Wins</div>
             </div>
         </div>
         <div class="h2h-history-box">{history_rows}</div>
     </div>
     """)
+
 
 show()
