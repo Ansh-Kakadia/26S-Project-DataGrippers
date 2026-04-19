@@ -138,21 +138,21 @@ def show():
         with cols[0]:
             st.markdown(f"""
             <div class='dispute-card'>
-                <div style='display:flex; justify-content:space-between;'>
-                    <div>
-                        <div class='dispute-title'>{matchup}</div>
-                        <div class='dispute-line'>Type: {dispute_type}</div>
-                        <div class='dispute-line'>{score_line}</div>
-                        <div class='dispute-line'>Description: {description}</div>
-                        {f"<div class='dispute-line'>Resolution: {resolution}</div>" if resolution else ""}
-                    </div>
-                    <div>
-                        <div class='dispute-meta'>Submitted by: {submitted_by}</div>
-                        <div class='dispute-meta'>
-                            <span class='status-pill' style='background:{status_color}; color:white;'>{status}</span>
-                        </div>
-                    </div>
-                </div>
+            <div style='display:flex; justify-content:space-between;'>
+            <div>
+            <div class='dispute-title'>{matchup}</div>
+            <div class='dispute-line'>Type: {dispute_type}</div>
+            <div class='dispute-line'>{score_line}</div>
+            <div class='dispute-line'>Description: {description}</div>
+            {f"<div class='dispute-line'>Resolution: {resolution}</div>" if resolution else ""}
+            </div>
+            <div>
+            <div class='dispute-meta'>Submitted by: {submitted_by}</div>
+            <div class='dispute-meta'>
+            <span class='status-pill' style='background:{status_color}; color:white;'>{status}</span>
+            </div>
+            </div>
+            </div>
             </div>
             """, unsafe_allow_html=True)
         with cols[1]:
