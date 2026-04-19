@@ -32,11 +32,11 @@ CREATE TABLE Player
 
 CREATE TABLE Team
 (
-    name       VARCHAR(50)                    NOT NULL,
-    status     ENUM ('Active', 'Inactive')    NOT NULL,
-    id         INT PRIMARY KEY AUTO_INCREMENT NOT NULL,
-    captain_id INT                            NOT NULL,
-    league_id  INT                            NOT NULL,
+    name       VARCHAR(50)                              NOT NULL,
+    status     ENUM ('Active', 'Inactive', 'Pending')   NOT NULL,
+    id         INT PRIMARY KEY AUTO_INCREMENT           NOT NULL,
+    captain_id INT                                      NOT NULL,
+    league_id  INT                                      NOT NULL,
     CONSTRAINT captain_team_fk
         FOREIGN KEY (captain_id)
             REFERENCES Player (id),
