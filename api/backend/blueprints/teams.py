@@ -15,13 +15,16 @@ def get_all_teams():
         league_id = request.args.get("league_id")
         status = request.args.get("status", "Active")
 
-        query = """SELECT t.id, t.name, t.status, t.league_id,
+        query = """SELECT t.id, t.name, t.status, t.league_id, t.captain_id,
+                          p.first_name AS captain_first_name,
+                          p.last_name AS captain_last_name,
                           l.sport, l.league_name,
                           l.roster_limit,
                           (SELECT COUNT(*) FROM Team_Membership tm
                            WHERE tm.team_id = t.id AND tm.status = 'Active') AS current_roster
                    FROM Team t
                    JOIN League l ON t.league_id = l.id
+                   JOIN Player p ON t.captain_id = p.id
                    WHERE t.status = %s"""
         params = [status]
 

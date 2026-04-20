@@ -5,6 +5,36 @@ from mysql.connector import Error
 players = Blueprint("players", __name__)
 
 
+@players.route("/players", methods=['GET'])
+def list_players():
+    cursor = get_db().cursor(dictionary=True)
+    try:
+        search = request.args.get("search", "").strip()
+        if search:
+            cursor.execute(
+                """SELECT id, first_name, last_name, email, university
+                   FROM Player
+                   WHERE CONCAT(first_name, ' ', last_name) LIKE %s
+                      OR email LIKE %s
+                   ORDER BY first_name, last_name
+                   LIMIT 50""",
+                (f"%{search}%", f"%{search}%"),
+            )
+        else:
+            cursor.execute(
+                """SELECT id, first_name, last_name, email, university
+                   FROM Player
+                   ORDER BY first_name, last_name
+                   LIMIT 50"""
+            )
+        return jsonify(cursor.fetchall()), 200
+    except Error as e:
+        current_app.logger.error(f"Database error in list_players: {e}")
+        return jsonify({"error": str(e)}), 500
+    finally:
+        cursor.close()
+
+
 @players.route("/players", methods=['POST'])
 def create_player():
     cursor = get_db().cursor(dictionary=True)
