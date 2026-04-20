@@ -8,7 +8,7 @@ from modules.nav import SideBarLinks, API_BASE
 from Style import apply_bold_button_styles
 
 st.set_page_config(layout='wide')
-st.session_state['authenticated'] = False
+st.session_state.setdefault('authenticated', False)
 
 SideBarLinks(show_home=True)
 apply_bold_button_styles()
