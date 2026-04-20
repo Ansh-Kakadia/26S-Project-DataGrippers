@@ -4,6 +4,8 @@ from datetime import datetime
 from modules.nav import SideBarLinks, API_BASE
 SideBarLinks(show_home=False, userAuthStatus="coach_persona")
 
+DISPUTE_TYPES = ["Score Dispute", "Other"]
+
 
 def apply_styles():
     st.markdown("""
@@ -121,6 +123,33 @@ def fmt_game_date(raw):
         return d.strftime(f"%a, %b {day}{suffix}")
     except ValueError:
         return s
+
+
+def submit_score(game_id, player_id, home_score, away_score):
+    try:
+        r = requests.post(
+            f"{API_BASE}/games/{game_id}/scores",
+            json={"player_id": player_id, "home_score": home_score,
+                  "away_score": away_score, "status": "Pending"},
+            timeout=5,
+        )
+        return r.status_code in (200, 201)
+    except requests.RequestException:
+        return False
+
+
+def file_dispute(game_id, team_id, dispute_type, description):
+    try:
+        r = requests.post(
+            f"{API_BASE}/games/{game_id}/disputes",
+            json={"submitted_by_team_id": team_id,
+                  "dispute_type": dispute_type,
+                  "description": description},
+            timeout=5,
+        )
+        return r.status_code in (200, 201)
+    except requests.RequestException:
+        return False
 
 
 def show():
@@ -243,6 +272,85 @@ def show():
         <div class="h2h-history-box">{history_rows}</div>
     </div>
     """)
+
+    st.markdown("<br>", unsafe_allow_html=True)
+
+    # ================================================================
+    # BUILD GAME SELECTOR (shared by submit score + file dispute)
+    # ================================================================
+    all_games = fetch_json(f"/teams/{team_id}/schedule") or []
+    player_id = st.session_state.get("player_id")
+
+    if all_games:
+        game_options = {
+            f"#{g['game_id']} — {g.get('home_team_name','')} vs {g.get('away_team_name','')} "
+            f"({(g.get('game_date') or '').split(' ')[0]})": g["game_id"]
+            for g in all_games
+            if "game_id" in g
+        }
+    else:
+        game_options = {}
+
+    # ================================================================
+    # SUBMIT SCORE
+    # ================================================================
+    st.subheader("Submit Score")
+
+    if not game_options:
+        st.write("No games found for this team.")
+    else:
+        score_game_label = st.selectbox("Game", list(game_options.keys()),
+                                        key="score_game_select")
+        c1, c2, c3 = st.columns([2, 2, 2])
+        with c1:
+            home_score = st.number_input("Home Score", min_value=0, value=0,
+                                         key="home_score_input")
+        with c2:
+            away_score = st.number_input("Away Score", min_value=0, value=0,
+                                         key="away_score_input")
+        with c3:
+            st.write("")
+            if st.button("Submit Score", type="primary", use_container_width=True):
+                if not player_id:
+                    st.error("No player in session.")
+                else:
+                    gid = game_options[score_game_label]
+                    if submit_score(gid, player_id, int(home_score), int(away_score)):
+                        st.success(f"Score submitted for game #{gid}.")
+                    else:
+                        st.error("Submission failed.")
+
+    st.markdown("<br>", unsafe_allow_html=True)
+
+    # ================================================================
+    # FILE DISPUTE
+    # ================================================================
+    st.subheader("File a Dispute")
+
+    if not game_options:
+        st.write("No games found for this team.")
+    else:
+        d1, d2 = st.columns([4, 2])
+        with d1:
+            dispute_game_label = st.selectbox("Game", list(game_options.keys()),
+                                              key="dispute_game_select")
+        with d2:
+            dispute_type = st.selectbox("Type", DISPUTE_TYPES, key="dispute_type_select")
+        dispute_desc = st.text_area(
+            "Description",
+            placeholder="Describe the issue clearly (e.g. incorrect score recorded, player misconduct)…",
+            key="dispute_desc_input", height=100,
+        )
+        if st.button("File Dispute", type="primary"):
+            if not dispute_desc.strip():
+                st.warning("Please enter a description.")
+            else:
+                gid = game_options[dispute_game_label]
+                if file_dispute(gid, team_id, dispute_type, dispute_desc.strip()):
+                    st.success(f"Dispute filed for game #{gid}.")
+                    st.rerun()
+                else:
+                    st.error("Dispute submission failed.")
 
 
 show()

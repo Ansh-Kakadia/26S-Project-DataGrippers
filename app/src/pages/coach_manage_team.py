@@ -138,7 +138,7 @@ def show():
             st.markdown(f'<div class="cell">{status_cell_html(m.get("status",""))}</div>',
                         unsafe_allow_html=True)
         with cols[5]:
-            if st.button("✕ Remove", key=f"rm_{m['id']}"):
+            if st.button("Remove", key=f"rm_{m['id']}"):
                 if remove_member(team_id, m["id"]):
                     st.success(f"Removed {full_name}")
                     st.rerun()

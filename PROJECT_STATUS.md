@@ -48,9 +48,9 @@ The three services run as Docker containers with hot-reload volumes for developm
 
 ---
 
-## Frontend Pages (12 total)
+## Frontend Pages (13 total)
 
-**Player:** Browse Profile, Browse Leagues, Scheduled Games  
+**Player:** Browse Profile, Browse Leagues, Scheduled Games, Notifications  
 **Coach:** Team Dashboard, Manage Team, Form Team  
 **League Admin:** Venue Schedule, Manage Leagues, Manage Disputes  
 **Analyst:** Intramural Report, Venue Report, Team Report
@@ -77,21 +77,16 @@ The three services run as Docker containers with hot-reload volumes for developm
 ## Known Gaps / Issues
 
 ### API Exists, No UI
-These endpoints are fully implemented in the backend but no frontend page exposes them:
+~~All four previously missing UI features have been implemented:~~
 
-| Feature | Endpoint | Affected Persona |
-|---|---|---|
-| Register as free agent | `POST /leagues/<id>/free-agents` | Player |
-| Submit game score | `POST /games/<id>/scores` | Coach |
-| File a dispute | `POST /games/<id>/disputes` | Coach |
-| View notifications | `GET /players/<id>/notifications` | Player |
+| Feature | Endpoint | Persona | UI Location |
+|---|---|---|---|
+| ~~Register as free agent~~ | `POST /leagues/<id>/free-agents` | Player | Added to `player_browse_leagues.py` |
+| ~~Submit game score~~ | `POST /games/<id>/scores` | Coach | Added to `coach_team_dashboard.py` |
+| ~~File a dispute~~ | `POST /games/<id>/disputes` | Coach | Added to `coach_team_dashboard.py` |
+| ~~View notifications~~ | `GET /players/<id>/notifications` | Player | New page `player_notifications.py` |
 
-### Cross-Persona Access (No Role Guards)
-No page checks `st.session_state['role']` before rendering. Pages only check whether a specific key (e.g. `player_id`, `team_id`) exists in session state, meaning:
-- A user who manually navigates to another persona's page will see it if the right session keys happen to be set
-- Coach and Player both use `player_id` in session — logging in as one leaves stale state for the other
-- All three league admin pages never validate `league_id` is set before making API calls
-- **Fix:** each page should redirect to `Home.py` if `st.session_state.get("role")` does not match the expected persona
+
 
 ### Redundant / Broken
 - **`role` vs `designation` mismatch:** `coach_form_team.py` sends `role` to the team members API; `coach_manage_team.py` sends `designation`. The API accepts both silently, masking the inconsistency.

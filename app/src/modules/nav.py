@@ -9,35 +9,34 @@ API_BASE = "http://web-api:4000"
 
 # ---- General ----------------------------------------------------------------
 def add_space():
-    st.sidebar.markdown("<br>", unsafe_allow_html=True)  # adds space
+    st.sidebar.write("")
 
 def add_line_break():
-    st.sidebar.markdown("""
-        <hr style="margin: 4px 0;">
-    """, unsafe_allow_html=True)
+    st.sidebar.divider()
 
 def home_nav():
-    st.sidebar.page_link("Home.py", label="Home", icon="🏠")
+    st.sidebar.page_link("Home.py", label="Home", icon=None)
 
 def player_persona_nav():
-    st.sidebar.page_link("pages/player_browse_profile.py", label="My Profile", icon="🔎")
-    st.sidebar.page_link("pages/player_browse_leagues.py", label="Browse Leagues", icon="🔎")
-    st.sidebar.page_link("pages/player_browse_scheduled_games.py", label="Schedule", icon="🔎")
+    st.sidebar.page_link("pages/player_browse_profile.py", label="My Profile", icon=None)
+    st.sidebar.page_link("pages/player_browse_leagues.py", label="Browse Leagues", icon=None)
+    st.sidebar.page_link("pages/player_browse_scheduled_games.py", label="Schedule", icon=None)
+    st.sidebar.page_link("pages/player_notifications.py", label="Notifications", icon=None)
 
 def coach_persona_nav():
-    st.sidebar.page_link("pages/coach_team_dashboard.py", label="My Team", icon="🔎")
-    st.sidebar.page_link("pages/coach_manage_team.py", label="Manage Team", icon="🔎")
-    st.sidebar.page_link("pages/coach_form_team.py", label="Make New Team", icon="🔎")
+    st.sidebar.page_link("pages/coach_team_dashboard.py", label="My Team", icon=None)
+    st.sidebar.page_link("pages/coach_manage_team.py", label="Manage Team", icon=None)
+    st.sidebar.page_link("pages/coach_form_team.py", label="Make New Team", icon=None)
 
 def league_administrator_nav():
-    st.sidebar.page_link("pages/league_admin_venue_schedule.py", label="Venue Schedule", icon="🔎")
-    st.sidebar.page_link("pages/league_admin_manage_league.py", label="Manage Leagues", icon="🔎")
-    st.sidebar.page_link("pages/league_admin_disputes.py", label="Manage Disputes", icon="🔎")
+    st.sidebar.page_link("pages/league_admin_venue_schedule.py", label="Venue Schedule", icon=None)
+    st.sidebar.page_link("pages/league_admin_manage_league.py", label="Manage Leagues", icon=None)
+    st.sidebar.page_link("pages/league_admin_disputes.py", label="Manage Disputes", icon=None)
 
 def analyst_nav():
-    st.sidebar.page_link("pages/analyst_intramural_report.py", label="Intramural Report", icon="🔎")
-    st.sidebar.page_link("pages/analyst_venue_report.py", label="Venue Report", icon="🔎")
-    st.sidebar.page_link("pages/analyst_team_report.py", label="Team Report", icon="🔎")
+    st.sidebar.page_link("pages/analyst_intramural_report.py", label="Intramural Report", icon=None)
+    st.sidebar.page_link("pages/analyst_venue_report.py", label="Venue Report", icon=None)
+    st.sidebar.page_link("pages/analyst_team_report.py", label="Team Report", icon=None)
 
 def SideBarLinks(show_home=False, userAuthStatus=None):
 
