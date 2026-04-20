@@ -59,7 +59,7 @@ def invite_member(team_id, player_id, role):
         r = requests.post(
             f"{API_BASE}/teams/{team_id}/members",
             json={"player_id": player_id, "role": role,
-                  "join_method": "Invite", "status": "Pending"},
+                  "join_method": "Invite", "status": "Inactive"},
             timeout=5,
         )
         return r.status_code in (200, 201)

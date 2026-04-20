@@ -4,7 +4,7 @@ from modules.nav import SideBarLinks, API_BASE
 SideBarLinks(show_home=False, userAuthStatus="coach_persona")
 
 
-ROLES = ["Player", "Asst. Coach", "Analyst"]
+DESIGNATIONS = ["Starter", "Substitute"]
 
 STATUS_COLORS = {
     "Active": "#2e7d32",
@@ -21,7 +21,7 @@ def apply_styles():
             div[data-testid="stSelectbox"] label,
             div[data-testid="stTextArea"] label { display: none; }
             .section-title { font-family:monospace; font-size:22px; font-weight:bold; margin-bottom:6px; }
-            .th-players { display:grid; grid-template-columns:2fr 1.5fr 1.4fr 1.2fr 1.4fr; padding:10px 14px; font-family:monospace; font-size:14px; font-weight:bold; background:#f5f5f5; border:2px solid #333; }
+            .th-players { display:grid; grid-template-columns:2fr 1.5fr 1.4fr 1.4fr 1.2fr 1.4fr; padding:10px 14px; font-family:monospace; font-size:14px; font-weight:bold; background:#f5f5f5; border:2px solid #333; }
             .th-msgs { display:grid; grid-template-columns:2fr 5fr 1.8fr; padding:10px 14px; font-family:monospace; font-size:14px; font-weight:bold; background:#f5f5f5; border:2px solid #333; }
             .cell { font-family:monospace; font-size:14px; display:flex; align-items:center; padding: 2px 0; min-height:38px; }
         </style>
@@ -56,12 +56,12 @@ def remove_member(team_id, member_id):
         return False
 
 
-def add_member(team_id, player_id, role):
+def add_member(team_id, player_id, designation):
     try:
         r = requests.post(
             f"{API_BASE}/teams/{team_id}/members",
-            json={"player_id": player_id, "role": role,
-                  "join_method": "Invite", "status": "Pending"},
+            json={"player_id": player_id, "designation": designation,
+                  "join_method": "Invite", "status": "Inactive"},
             timeout=5,
         )
         return r.status_code in (200, 201)
@@ -117,24 +117,27 @@ def show():
     st.markdown("<div class='section-title'>Manage Players</div>", unsafe_allow_html=True)
     members = fetch_members(team_id)
 
-    st.html('<div class="th-players"><span>Name</span><span>Role</span>'
+    st.html('<div class="th-players"><span>Name</span><span>Role</span><span>Designation</span>'
             '<span>Date Joined</span><span>Status</span><span>Action</span></div>')
 
     for m in members:
         full_name = f"{m.get('first_name','')} {m.get('last_name','')}".strip()
         date_joined = (m.get("date_joined") or "").split(" ")[0]
-        cols = st.columns([2, 1.5, 1.4, 1.2, 1.4])
+        cols = st.columns([2, 1.5, 1.4, 1.4, 1.2, 1.4])
         with cols[0]:
             st.markdown(f'<div class="cell">{full_name}</div>', unsafe_allow_html=True)
         with cols[1]:
             st.markdown(f'<div class="cell">{m.get("role","")}</div>',
                         unsafe_allow_html=True)
         with cols[2]:
-            st.markdown(f'<div class="cell">{date_joined}</div>', unsafe_allow_html=True)
+            st.markdown(f'<div class="cell">{m.get("designation","")}</div>',
+                        unsafe_allow_html=True)
         with cols[3]:
+            st.markdown(f'<div class="cell">{date_joined}</div>', unsafe_allow_html=True)
+        with cols[4]:
             st.markdown(f'<div class="cell">{status_cell_html(m.get("status",""))}</div>',
                         unsafe_allow_html=True)
-        with cols[4]:
+        with cols[5]:
             if st.button("✕ Remove", key=f"rm_{m['id']}"):
                 if remove_member(team_id, m["id"]):
                     st.success(f"Removed {full_name}")
@@ -153,12 +156,12 @@ def show():
         inv_pid = st.text_input("inv_pid", placeholder="Player ID",
                                 label_visibility="collapsed", key="inv_pid")
     with c2:
-        inv_role = st.selectbox("inv_role", ROLES, label_visibility="collapsed",
-                                key="inv_role")
+        inv_designation = st.selectbox("inv_designation", DESIGNATIONS, label_visibility="collapsed",
+                                key="inv_designation")
     with c3:
         if st.button("Send Invite", type="primary", use_container_width=True):
             if inv_pid.strip().isdigit():
-                if add_member(team_id, int(inv_pid.strip()), inv_role):
+                if add_member(team_id, int(inv_pid.strip()), inv_designation):
                     st.success(f"Invited player {inv_pid}")
                     st.rerun()
                 else:

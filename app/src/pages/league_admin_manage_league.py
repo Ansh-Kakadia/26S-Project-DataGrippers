@@ -67,7 +67,6 @@ def update_team_status(team_id, status):
     except requests.RequestException:
         return False
 
-
 def delete_team(team_id):
     try:
         r = requests.delete(f"{API_BASE}/teams/{team_id}", timeout=5)
@@ -254,7 +253,7 @@ def show():
                     st.markdown(f"<div style='font-family:monospace;padding:10px;border:1px solid #ddd;color:{status_color};font-weight:bold;'>{status}</div>",
                                 unsafe_allow_html=True)
                 with cols[2]:
-                    bc1, bc2, bc3 = st.columns(3)
+                    bc1, bc2 = st.columns(2)
                     if status == "Pending":
                         with bc1:
                             if st.button("Accept", key=f"acc_{tid}"):
@@ -262,12 +261,12 @@ def show():
                                     st.rerun()
                         with bc2:
                             if st.button("Reject", key=f"rej_{tid}"):
-                                if update_team_status(tid, "Rejected"):
+                                if update_team_status(tid, "Inactive"):
                                     st.rerun()
                     else:
                         with bc1:
-                            if st.button("Remove", key=f"del_{tid}"):
-                                if delete_team(tid):
+                            if st.button("Active/Inactive", key=f"del_{tid}"):
+                                if update_team_status(tid, "Active" if status == "Inactive" else "Inactive"):
                                     st.rerun()
 
 
